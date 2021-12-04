@@ -5456,6 +5456,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("SEHFinallyStmt");
   case CXCursor_SEHLeaveStmt:
     return cxstring::createRef("SEHLeaveStmt");
+  case CXCursor_StringInjectionStmt:
+    return cxstring::createRef("StringInjectionStmt");
   case CXCursor_NullStmt:
     return cxstring::createRef("NullStmt");
   case CXCursor_InvalidFile:
@@ -5726,6 +5728,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("StaticAssert");
   case CXCursor_FriendDecl:
     return cxstring::createRef("FriendDecl");
+  case CXCursor_Metaprogram:
+    return cxstring::createRef("Metaprogram");
   case CXCursor_ConvergentAttr:
     return cxstring::createRef("attribute(convergent)");
   case CXCursor_WarnUnusedAttr:
@@ -6478,6 +6482,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::ObjCPropertyImpl:
   case Decl::FileScopeAsm:
   case Decl::StaticAssert:
+  case Decl::Metaprogram:
   case Decl::Block:
   case Decl::Captured:
   case Decl::OMPCapturedExpr:

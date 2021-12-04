@@ -107,4 +107,5 @@ def OMPRequires : DeclNode<Decl>;
 def Empty : DeclNode<Decl>;
 def RequiresExprBody : DeclNode<Decl>, DeclContext;
 def LifetimeExtendedTemporary : DeclNode<Decl>;
+def Metaprogram : DeclNode<Decl>;
 

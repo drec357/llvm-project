@@ -13,6 +13,7 @@ add_clang_library(clangParse
   ParseExpr.cpp
   ParseExprCXX.cpp
   ParseInit.cpp
+  ParseMetaprogram.cpp
   ParseObjc.cpp
   ParseOpenMP.cpp
   ParsePragma.cpp
@@ -21,6 +22,7 @@ add_clang_library(clangParse
   ParseTemplate.cpp
   ParseTentative.cpp
   Parser.cpp
+  ParserBrickWallRAII.cpp
 
   LINK_LIBS
   clangAST

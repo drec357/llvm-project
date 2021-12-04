@@ -17623,7 +17623,6 @@ static bool captureInBlock(BlockScopeInfo *BSI, VarDecl *Var,
   return !Invalid;
 }
 
-
 /// Capture the given variable in the captured region.
 static bool captureInCapturedRegion(
     CapturedRegionScopeInfo *RSI, VarDecl *Var, SourceLocation Loc,
@@ -17865,6 +17864,14 @@ static void buildLambdaCaptureFixit(Sema &Sema, LambdaScopeInfo *LSI,
   }
 }
 
+static bool isMetaprogram(DeclContext *DC) {
+  if (auto FD = dyn_cast<FunctionDecl>(DC)) {
+    return FD->getDeclName().isIdentifier()
+        && FD->getName() == "__metaprogdef";
+  }
+  return false;
+}
+
 bool Sema::tryCaptureVariable(
     VarDecl *Var, SourceLocation ExprLoc, TryCaptureKind Kind,
     SourceLocation EllipsisLoc, bool BuildAndDiagnose, QualType &CaptureType,
@@ -17915,7 +17922,19 @@ bool Sema::tryCaptureVariable(
   bool Nested = false;
   bool Explicit = (Kind != TryCapture_Implicit);
   unsigned FunctionScopesIndex = MaxFunctionScopesIndex;
+  bool origVarDCwasMetaprog = isMetaprogram(VarDC);
+  // If VarDC is a metaprogram, set it to its parent -- that is the
+  // only way DC can possibly find VarDC.
+  if (origVarDCwasMetaprog)
+    VarDC = VarDC->getParent();
   do {
+    if (isMetaprogram(DC))
+      DC = DC->getParent();
+    if (origVarDCwasMetaprog && VarDC == DC)
+      break; //i.e. don't try to see if the new VarDC is a lambda scope,
+             // whose captures you need to look through --
+             // just move along to the end game.
+
     // Only block literals, captured statements, and lambda expressions can
     // capture; other scopes don't work.
     DeclContext *ParentDC = getParentOfCapturingContextOrNull(DC, Var,

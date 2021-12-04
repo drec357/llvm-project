@@ -146,6 +146,7 @@ namespace clang {
   class LocalInstantiationScope;
   class LookupResult;
   class MacroInfo;
+  struct MetaprogramContext;
   typedef ArrayRef<std::pair<IdentifierInfo *, SourceLocation>> ModuleIdPath;
   class ModuleLoader;
   class MultiLevelTemplateArgumentList;
@@ -176,6 +177,7 @@ namespace clang {
   class OverloadExpr;
   class ParenListExpr;
   class ParmVarDecl;
+  class Parser;
   class Preprocessor;
   class PseudoDestructorTypeStorage;
   class PseudoObjectExpr;
@@ -9604,6 +9606,119 @@ public:
   DeclContext *FindInstantiatedContext(SourceLocation Loc, DeclContext *DC,
                           const MultiLevelTemplateArgumentList &TemplateArgs);
 
+  //===--- String injection ---===//
+  /// A number of expression/statement types take an arbitrary
+  /// number of string and or integer arguments.  This function standardizes
+  /// the Sema processing of them.
+  /// \returns false if errors encountered.
+  /// \param Args points to a container whose contents may be changed
+  /// by this method.
+  bool PrepareStrIntArgsForEval(ArrayRef<Expr *> Args);
+
+  /// ParsingIntoInstantiation - when you are parsing declarations or
+  /// statements *into* a template instantiation
+  /// (due to metaprogram decls with __inject statements in the template),
+  /// this is set to either PII_class or PII_func, depending on the kind of
+  /// template.
+  /// This is used when we need to instruct Sema to keep track of things needed
+  /// by the Parser (e.g. Scope and IdResolver with the proper instantiated
+  /// Decls, for proper Lookup when parsing Stmts when PII==PII_func) that
+  /// ordinarily Sema would not keep track of during template instantiation,
+  /// when the Parser usually sits idle.
+  enum ParsingIntoInstantiation {
+    /// We are not presently parsing new members into a template instantiation.
+    /// \code
+    ///   template<int N>
+    ///   class Foo {
+    ///     consteval {
+    ///       __inject("class Bar { "
+    ///                "  consteval {"
+    ///                "    __inject(\"int bar = \", N, \";\");"
+    ///                "  }"
+    ///                "};");
+    ///     }
+    ///   };
+    ///   int main() {
+    ///     Foo<3> f; //PII = PII_class during the outer __inject processing,
+    ///               //but = PII_false during the inner __inject.
+    ///   }
+    /// \endcode
+    PII_false = 0,
+    /// We are presently parsing member decls into a class template
+    /// instantiation,
+    ///   template<int N>
+    ///   class Foo {
+    ///     consteval { __inject("int bar = ", N, ";"); }
+    ///   }
+    ///   int main() {
+    ///     Foo<3> f; //PII = PII_class during the __inject processing
+    ///   }
+    /// \endcode
+    PII_class,
+    /// We are presently parsing statements into a function
+    /// template instantiation.  E.g.
+    /// \code
+    ///   template<int N>
+    ///   void f() {
+    ///     consteval { __inject("int foo = ", N, ";"); }
+    ///   }
+    ///   int main() {
+    ///     f<3>; //PII = PII_false during the __inject processing
+    ///   }
+    /// \endcode
+    PII_func
+  };
+
+  ParsingIntoInstantiation getParsingIntoInstantiationStatus() const {
+    return PII;
+  }
+
+  Decl *ActOnMetaprogramDecl(Scope *S, SourceLocation ConstevalLoc,
+                             unsigned &ScopeFlags,
+                             const MetaprogramContext &MetaCtx,
+                             bool Nested);
+  void ActOnStartMetaprogramDecl(Scope *S, Decl *MD);
+  void ActOnFinishMetaprogramDecl(Scope *S, Decl *MD, Stmt *Body);
+  void ActOnMetaprogramDeclError(Scope *S, Decl *MD);
+
+  bool EvaluateMetaprogramDecl(MetaprogramDecl *MD, FunctionDecl *D);
+  bool EvaluateMetaprogramDecl(MetaprogramDecl *MD, Expr *E);
+  bool EvaluateMetaprogramDeclCall(MetaprogramDecl *MD, CallExpr *Call);
+
+  StmtResult ActOnStringInjectionStmt(SourceLocation KeywordLoc,
+                                        SourceLocation LParenLoc,
+                                        ArrayRef<Expr *> Args,
+                                        SourceLocation RParenLoc,
+                                        bool AnyDependent);
+
+  bool DoQueuedMetaparsing(SourceLocation POI,
+                           ArrayRef<const StringLiteral *> MetaCodeChunks,
+                           MetaprogramDecl *MD);
+
+  Parser &getParser() {
+    assert(TheParser && "Expected setParser to have been "
+                        "called when the Parser was first constructed ");
+    return *TheParser;
+  }
+  void setParser(Parser *P) {
+    assert(P && "Expected non-null parser in setParser call");
+    TheParser = P;
+  }
+  void TheParserEnterScope(unsigned ScopeFlags);
+  void TheParserExitScope();
+
+private:
+  ParsingIntoInstantiation PII = PII_false;
+
+  /// For parsing generated source strings using the original parser:
+  class Parser *TheParser;
+
+  // These are needed by these RAII objects to manage the CurScope and PII
+  // fields, respectively, during string injection.
+  friend class TempParseIntoDiffScope;
+  friend class SemaPIIRAII;
+
+public:
   // Objective-C declarations.
   enum ObjCContainerKind {
     OCK_None = -1,

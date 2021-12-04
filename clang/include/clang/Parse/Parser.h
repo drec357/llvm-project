@@ -65,6 +65,20 @@ class Parser : public CodeCompletionHandler {
   friend class ObjCDeclContextSwitch;
   friend class ParenBraceBracketBalancer;
   friend class BalancedDelimiterTracker;
+  friend class ParserBrickWallRAII;
+  friend class TempParseIntoClassInstantiation;
+  friend bool Sema::
+      InstantiateClass(SourceLocation PointOfInstantiation,
+                       CXXRecordDecl *Instantiation, CXXRecordDecl *Pattern,
+                       const MultiLevelTemplateArgumentList &TemplateArgs,
+                       TemplateSpecializationKind TSK,
+                       bool Complain);
+  friend void Sema::ActOnFinishMetaprogramDecl(Scope *S, Decl *D, Stmt *Body);
+  friend bool Sema::
+      DoQueuedMetaparsing(SourceLocation POI,
+                          ArrayRef<const StringLiteral *> InjectedStringChunks,
+                          MetaprogramDecl *MD);
+
 
   Preprocessor &PP;
 
@@ -407,6 +421,10 @@ class Parser : public CodeCompletionHandler {
   /// just a regular sub-expression.
   SourceLocation ExprStatementTokLoc;
 
+  /// True if we are parsing code from an injected string literal evaluated
+  /// earlier in the compilation.
+  bool ParsingFromInjectedStrVal = false;
+
   /// Flags describing a context in which we're parsing a statement.
   enum class ParsedStmtContext {
     /// This context permits declarations in language modes where declarations
@@ -434,6 +452,10 @@ public:
   Parser(Preprocessor &PP, Sema &Actions, bool SkipFunctionBodies);
   ~Parser() override;
 
+  /// True if we are parsing code from an injected string literal evaluated
+  /// earlier in the compilation.
+  bool ParsingFromInjectedStr() const { return ParsingFromInjectedStrVal; }
+
   const LangOptions &getLangOpts() const { return PP.getLangOpts(); }
   const TargetInfo &getTargetInfo() const { return PP.getTargetInfo(); }
   Preprocessor &getPreprocessor() const { return PP; }
@@ -445,6 +467,10 @@ public:
   void incrementMSManglingNumber() const {
     return Actions.incrementMSManglingNumber();
   }
+
+  /// True if currently parsing the content of string literals we
+  /// have evaluated earlier in the program (via \c __inject(...) statements).
+  bool IsMetaParsingInjectedStrings() const;
 
   Decl  *getObjCDeclContext() const { return Actions.getObjCDeclContext(); }
 
@@ -568,7 +594,7 @@ private:
 
   /// Return the current token to the token stream and make the given
   /// token the current token.
-  void UnconsumeToken(Token &Consumed) {
+  void UnconsumeToken(const Token &Consumed) {
       Token Next = Tok;
       PP.EnterToken(Consumed, /*IsReinject*/true);
       PP.Lex(Tok);
@@ -3122,6 +3148,7 @@ private:
                                   SourceLocation AttrFixitLoc,
                                   unsigned TagType,
                                   Decl *TagDecl);
+  void HandleLateParsing();
   void ParseCXXMemberSpecification(SourceLocation StartLoc,
                                    SourceLocation AttrFixitLoc,
                                    ParsedAttributesWithRange &Attrs,
@@ -3504,6 +3531,33 @@ private:
   // Embarcadero: Arary and Expression Traits
   ExprResult ParseArrayTypeTrait();
   ExprResult ParseExpressionTrait();
+
+  //===--------------------------------------------------------------------===//
+  // StringInjection
+  bool ParseArbitraryConstexprExprArgs(SmallVectorImpl<Expr *> &Args,
+                                       bool &AnyDependent);
+  bool ParseArbitraryParensConstexprExprArgs(SourceLocation &LParenLoc,
+                                         SmallVectorImpl<Expr *> &Args,
+                                         SourceLocation &RParenLoc,
+                                         bool &AnyDependent);
+
+  /// Parse an __inject(...) statement
+  StmtResult ParseStringInjectionStmt();
+
+  /// Parse a __metaparse_cast expression
+  ExprResult ParseCXXMetaparseCastExpr();
+
+  /// Parse a metaprogram.
+  /// \param MetaCtx: holds data needed by the Parser for metaparsing
+  /// \param Nested: if this is being parsed while processing another
+  /// metaprogram (I.e., if this is called while doing a template instantiation
+  /// that was needed while parsing another metaprogram.  "Nested" does *not*
+  /// refer to e.g. constexpr { constexpr { ... } }, but rather to e.g.
+  /// \code
+  ///   constexpr { __inject("constexpr { ... }"); } //Nested = true for inner
+  /// \endcode
+  DeclGroupPtrTy ParseMetaprogram(struct MetaprogramContext &MetaCtx,
+                                  bool Nested);
 
   //===--------------------------------------------------------------------===//
   // Preprocessor code-completion pass-through

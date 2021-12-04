@@ -590,4 +590,15 @@ def warn_padded_struct_size : Warning<
   InGroup<Padded>, DefaultIgnore;
 def warn_unnecessary_packed : Warning<
   "packed attribute is unnecessary for %0">, InGroup<Packed>, DefaultIgnore;
+
+// String Injection
+def err_constexpr_eval_failed : Error<
+  "Failed to constant-evaluate expression">; //FIXME redundant or pathological
+def note___inject_outside_metaprogram : Note<
+  "__inject statements are only valid inside metaprograms, or in "
+  "consteval functions ultimately called from metaprograms">;
+def err_metaparse_extraneous_chars : Error<
+  "extraneous character(s) in __metaparse_expr, beginning with %0">;
+def note_during_metaparse_expr_of_str : Note<
+  "during __metaparse_expr of this string: '%0'">;
 }

@@ -2600,7 +2600,11 @@ enum CXCursorKind {
    */
   CXCursor_OMPGenericLoopDirective = 295,
 
-  CXCursor_LastStmt = CXCursor_OMPGenericLoopDirective,
+  /** String injection statement
+   */
+  CXCursor_StringInjectionStmt = 296,
+
+  CXCursor_LastStmt = CXCursor_StringInjectionStmt,
 
   /**
    * Cursor that represents the translation unit itself.
@@ -2684,8 +2688,14 @@ enum CXCursorKind {
    * a friend declaration.
    */
   CXCursor_FriendDecl = 603,
+
+  /**
+   * a metaprogram decl (consteval {...})
+   */
+  CXCursor_Metaprogram = 604,
+
   CXCursor_FirstExtraDecl = CXCursor_ModuleImportDecl,
-  CXCursor_LastExtraDecl = CXCursor_FriendDecl,
+  CXCursor_LastExtraDecl = CXCursor_Metaprogram,
 
   /**
    * A code completion overload candidate.

@@ -492,6 +492,17 @@ void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
     SubExpr = Record.readSubStmt();
 }
 
+void ASTStmtReader::VisitStringInjectionStmt(StringInjectionStmt *S) {
+  VisitStmt(S);
+  unsigned NumArgs = Record.readInt();
+  assert((NumArgs == S->getNumArgs()) && "Wrong NumArgs!");
+  S->setKeywordLoc(readSourceLocation());
+  S->setLParenLoc(readSourceLocation());
+  S->setRParenLoc(readSourceLocation());
+  for (unsigned I = 0; I != NumArgs; ++I)
+    S->setArg(I, Record.readSubExpr());
+}
+
 void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
   VisitStmt(S);
   Record.skipInts(1);

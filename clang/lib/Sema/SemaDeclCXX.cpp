@@ -1834,10 +1834,12 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
     case Decl::UnresolvedUsingTypename:
     case Decl::UnresolvedUsingValue:
     case Decl::UsingEnum:
+    case Decl::Metaprogram:
       //   - static_assert-declarations
       //   - using-declarations,
       //   - using-directives,
       //   - using-enum-declaration
+      //   - metaprogram
       continue;
 
     case Decl::Typedef:
@@ -2104,6 +2106,11 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
                                       Cxx1yLoc, Cxx2aLoc, Kind))
         return false;
     return true;
+
+  case Stmt::StringInjectionStmtClass:
+    // __inject is a compile-time statement.
+    return true;
+
 
   case Stmt::SwitchStmtClass:
   case Stmt::CaseStmtClass:

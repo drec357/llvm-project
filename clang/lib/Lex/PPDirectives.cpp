@@ -2630,6 +2630,16 @@ static bool isConfigurationPattern(Token &MacroName, MacroInfo *MI,
 MacroInfo *Preprocessor::ReadOptionalMacroParameterListAndBody(
     const Token &MacroNameTok, const bool ImmediatelyAfterHeaderGuard) {
 
+  // Trying to usefunction-like macros defined
+  // within a metaparse statement results in crashes, hence this:
+  if (ParsingFromInjectedStr()) {
+    Diag(CurInjectedStrLoc, diag::err_metaparse_unsupported_use)
+        << "(Cannot #define a macro within a metaparse statement.)";
+    setErrorWhileParsingFromInjectedStr(true);
+    DiscardUntilEndOfDirective();
+    return nullptr;
+  }
+
   Token LastTok = MacroNameTok;
   // Create the new macro.
   MacroInfo *const MI = AllocateMacroInfo(MacroNameTok.getLocation());

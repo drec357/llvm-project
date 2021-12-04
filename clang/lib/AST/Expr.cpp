@@ -1098,7 +1098,15 @@ StringLiteral::StringLiteral(const ASTContext &Ctx, StringRef Str,
               NumConcatenated * sizeof(SourceLocation));
 
   // Initialize the trailing array of char holding the string data.
-  std::memcpy(getTrailingObjects<char>(), Str.data(), ByteLength);
+  // [StringInjection]: +1 to ByteLength to null-terminate
+  // (necessary only for any string literals which are parsed vian __inject
+  // statements, though we impose the cost on all string literals
+  // since that cost seems small).
+  if (Ctx.getLangOpts().StringInjection) {
+    std::memcpy(getTrailingObjects<char>(), Str.data(), ByteLength + 1);
+    getTrailingObjects<char>()[ByteLength] = '\0';
+  } else
+    std::memcpy(getTrailingObjects<char>(), Str.data(), ByteLength);
 
   setDependence(ExprDependence::None);
 }
@@ -1116,7 +1124,8 @@ StringLiteral *StringLiteral::Create(const ASTContext &Ctx, StringRef Str,
                                      const SourceLocation *Loc,
                                      unsigned NumConcatenated) {
   void *Mem = Ctx.Allocate(totalSizeToAlloc<unsigned, SourceLocation, char>(
-                               1, NumConcatenated, Str.size()),
+                               1, NumConcatenated, Str.size() +
+                                   (Ctx.getLangOpts().StringInjection ? 1 : 0)),
                            alignof(StringLiteral));
   return new (Mem)
       StringLiteral(Ctx, Str, Kind, Pascal, Ty, Loc, NumConcatenated);

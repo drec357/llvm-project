@@ -20,8 +20,10 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/Basic/MetaprogramContext.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ScopeInfo.h"
@@ -1351,6 +1353,109 @@ Decl *TemplateDeclInstantiator::VisitStaticAssertDecl(StaticAssertDecl *D) {
                                               D->getMessage(),
                                               D->getRParenLoc(),
                                               D->isFailed());
+}
+
+Decl *TemplateDeclInstantiator::VisitMetaprogramDecl(MetaprogramDecl *D) {
+  // Note an irony here: both function templates and class templates
+  // will be processed here, but it is only the *class* templates that should
+  // have D->hasFunctionRepresentation() == true; MetaprogramDecls from
+  // *function* templates will paradoxically have
+  // D->hasFunctionRepresentation() == false.
+  // The reason is that you can declare functions in a class context, but not
+  // within another function -- in the latter case you need lambdas, which are
+  // classes -- i.e. the representation needed is the opposite of the current
+  // context.
+  // Bottom line note that D->hasFunctionRepresentation() means
+  // D was declared in a class template; and D->hasLambdaRepresentation() means
+  // D was declared in a function template.
+  if (D->hasFunctionRepresentation()) {
+    assert(D->getMetaprogramContext().isClassContext()
+           && "Expected MetaprogarmDecls from class contexts to have "
+              "function representations");
+    FunctionDecl *Fn = D->getImplicitFunctionDecl();
+    // Instantiate the nested function.
+    //
+    // FIXME: The point of instantiation is probably wrong.
+    Decl *NewD = SemaRef.SubstDecl(Fn, Owner, TemplateArgs);
+    if (!NewD)
+      return nullptr;
+    FunctionDecl *NewFn = cast<FunctionDecl>(NewD);
+    if (NewFn->isInvalidDecl())
+      return nullptr;
+    StmtResult NewBody;
+    {
+      Sema::ContextRAII Switch(SemaRef, NewFn);
+      SemaRef.PushFunctionScope();
+      Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
+      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+    }
+    if (NewBody.isInvalid())
+      return nullptr;
+    NewFn->setBody(NewBody.get());
+
+    // Build the metaprogram declaration.
+    assert(D->getAccessUnsafe() != AS_none
+           && "Need to set the access properly for a metaprogram "
+              "in a class context!");
+    auto MetaCtx = MetaprogramContext(this->getAccessAttrs(), D->getAccess());
+    MetaprogramDecl *MpD = MetaprogramDecl::Create(SemaRef.Context, Owner,
+                                                   Fn->getLocation(),
+                                                   MetaCtx, NewFn,
+                                                   /*InstantiatedFrom=*/D);
+    assert(SemaRef.CurContext == Owner
+           && "Expected these to be the same -- need to revisit "
+              "whether to addDecl to Owner or CurContext");
+    Owner->addDecl(MpD);
+
+    // Evaluate it if instantiation has made it non-dependent.
+    if (!NewFn->isDependentContext()) {
+      assert(MpD->getAccessUnsafe() != AS_none
+             && "Should have set access during ConstexprDecl::Create!");
+      SemaRef.EvaluateMetaprogramDecl(MpD, NewFn);
+    } else {
+      MpD->setDependent();
+      // Since this has a function representation, and the context is dependent,
+      // this must have been declared inside a ClassTemplateDecl or
+      // ClassTemplatePartialSpecializationDecl; either way the CurContext is
+      // a CXXRecordDecl:
+      cast<CXXRecordDecl>(Owner)->setIsPatternWithMetaprogram();
+    }
+    return MpD;
+  } else {
+    assert(D->hasLambdaRepresentation());
+    assert(SemaRef.CurContext == Owner);
+
+    Expr *OldLambdaExpr = D->getImplicitLambdaExpr();
+    StmtResult NewLambdaStmtRes =
+        SemaRef.SubstStmt(OldLambdaExpr, TemplateArgs);
+    assert(dyn_cast<LambdaExpr>(NewLambdaStmtRes.get()));
+    LambdaExpr *NewLambdaExpr = cast<LambdaExpr>(NewLambdaStmtRes.get());
+
+    MetaprogramDecl *MpD =
+        MetaprogramDecl::Create(SemaRef.Context, Owner,
+                                D->getLocation(),
+                                D->getMetaprogramContext(), /*!*/
+                                NewLambdaExpr->getLambdaClass(),
+                                /*InstantiatedFrom=*/D);
+    MpD->setImplicitLambdaExpr(NewLambdaExpr);
+    Owner->addDecl(MpD);
+
+    // And evaluate it if needed.
+    if (!NewLambdaExpr->isTypeDependent() &&
+        !NewLambdaExpr->isValueDependent()) {
+      SemaRef.EvaluateMetaprogramDecl(MpD, NewLambdaExpr);
+    } else {
+      assert(Owner->isDependentContext()
+             && "I assumed if the NewLambdaExpr was type dependent, "
+                "the Owner would also be dependent");
+      MpD->setDependent();
+      // Since this has a lambda representation, this was declared inside
+      // a dependent FunctionDecl.
+      cast<FunctionDecl>(Owner)->setIsPatternWithMetaprogram();
+      MpD->setImplicitLambdaExpr(NewLambdaExpr);
+    }
+    return MpD;
+  }
 }
 
 Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
@@ -4931,6 +5036,35 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   EnterExpressionEvaluationContext EvalContext(
       *this, Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
+  // Temporarily set the PII (the thing returned by
+  // SemaRef.getParsingIntoInstantiationStatus()) to either
+  // PII_func or PII_false, depending on wither
+  // PatternDecl->isPatternWithMetaprogram().
+  SemaPIIRAII SavedPIIState(*this);
+
+  // Construct an RAII object to save the parser state and enter the proper
+  // scope *if* this PatternDecl needs to access the parser.
+  // This RAII object must be created before LocalInstantiationScope and
+  // anything that might add to that scope (i.e.
+  // addInstantiatedParametersToScope), so that the proper Parser Scope
+  // is created and LocalInstantiationScope can copy its contents to it
+  // as they are added (via InstantiatedLocal(...) etc.)
+  // FIXME a pointer is a lousy way of doing this
+  std::unique_ptr<TempParseIntoFuncInstantiation>
+      TemporarilyParseIntoInstantiation;
+
+  if (PatternDecl->isPatternWithMetaprogram()) {
+    TemporarilyParseIntoInstantiation =
+        std::make_unique<TempParseIntoFuncInstantiation>(*this);
+    assert(PII == PII_func); //just to be sure we set PII correctly
+  } else {
+    // If you don't need parsing, set the PII accordingly so that,
+    // in case you instantiate a non-needsParsing... function WHILE
+    // instantiating a yes-needsParsing... function, you make sure
+    // to turn off manipulating scopes and adding decls etc.
+    PII = PII_false; //read "ParsingIntoInstantiation_false"
+  }
+
   // Introduce a new scope where local variable instantiations will be
   // recorded, unless we're actually a member function within a local
   // class, in which case we need to merge our results with the parent
@@ -5055,11 +5189,15 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
       if (Body.isInvalid())
         Function->setInvalidDecl();
+
+      if (TemporarilyParseIntoInstantiation)
+        TemporarilyParseIntoInstantiation->setInvalid();
     }
     // FIXME: finishing the function body while in an expression evaluation
     // context seems wrong. Investigate more.
     ActOnFinishFunctionBody(Function, Body.get(), /*IsInstantiation=*/true);
 
+    assert(PatternDecl->isDependentContext()); //sanity
     PerformDependentDiagnostics(PatternDecl, TemplateArgs);
 
     if (auto *Listener = getASTMutationListener())
@@ -5075,6 +5213,13 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   // instantiation within this scope.
   LocalInstantiations.perform();
   Scope.Exit();
+
+  // Delete the Parser/Scope RAII object IF it existed, returning the
+  // Parser and Scope etc. back to their original states.  Same with PII.
+  if (TemporarilyParseIntoInstantiation)
+    TemporarilyParseIntoInstantiation.reset();
+  SavedPIIState.Exit();
+
   GlobalInstantiations.perform();
 }
 

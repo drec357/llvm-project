@@ -259,6 +259,7 @@ PUNCTUATOR(caretcaret,            "^^")
 //   KEYNOCXX - This is a keyword in every non-C++ dialect.
 //   KEYCXX11 - This is a C++ keyword introduced to C++ in C++11
 //   KEYCXX20 - This is a C++ keyword introduced to C++ in C++20
+//   KEYSTRINGINJ - This is a string injection metaprogramming is enabled.
 //   KEYCONCEPTS - This is a keyword if the C++ extensions for concepts
 //                 are enabled.
 //   KEYMODULES - This is a keyword if the C++ extensions for modules
@@ -393,6 +394,9 @@ CXX11_KEYWORD(thread_local          , 0)
 // C++20 keywords
 CONCEPTS_KEYWORD(concept)
 CONCEPTS_KEYWORD(requires)
+
+// [StringInjection]
+KEYWORD(__inject                    , KEYSTRINGINJ)
 
 // C++20 / coroutines TS keywords
 COROUTINES_KEYWORD(co_await)

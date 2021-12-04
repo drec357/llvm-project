@@ -31,9 +31,11 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/Lambda.h"
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/MetaprogramContext.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Sema/Ownership.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -986,6 +988,25 @@ public:
   /// class.
   bool needsOverloadResolutionForDestructor() const {
     return data().NeedOverloadResolutionForDestructor;
+  }
+
+  /// Returns whether this record is an instantiatable pattern containing
+  /// a MetaprogramDecl among its child decls; e.g.
+  /// \code
+  ///   template<typename T> class Foo { consteval { ... } };
+  ///   template<typename U> class Foo<vector<U>> { consteval {...} };
+  ///   template<typename T> class Bar { class Inner { consteval {...} }; };
+  /// \endcode
+  /// For Foo<T> and Foo<vector<U>>, and Bar<T>::Inner all have
+  /// isPatternWithMetaprogram() = true.  (For Bar<T> it is false.)
+  bool isPatternWithMetaprogram() const {
+    return data().IsPatternWithMetaprogram;
+  }
+
+  /// Specify that this record is an instantiatable pattern containing
+  /// a MetaprogramDecl among its child decls.
+  void setIsPatternWithMetaprogram(bool V = true) {
+    data().IsPatternWithMetaprogram = V;
   }
 
   /// Determine whether this class describes a lambda function object.
@@ -4184,6 +4205,174 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Decl::MSGuid; }
+};
+
+/// \brief Represents a metaprogram.
+///
+/// A metaprogram contains a sequence of statements that are evaluated
+/// at compile-time.
+/// \code
+/// constval {
+///   // statements
+/// }
+/// \endcode
+///
+/// A MetaprogramDecl is a "Decl" only in the sense that it will be created
+/// during ParseDeclaration.  It is really a meta-statement, that will
+/// apply side-effects outside its scope by introducing other Decls
+/// (via injection statements) in the context in which it was encountered.
+/// It is permitted in namespace, class, and function scopes, and is generally
+/// used in a dependent/templated context.
+class MetaprogramDecl : public Decl {
+  virtual void anchor();
+
+  /// The de-sugared form of the declaration.
+  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
+
+  /// The de-sugared call expression.
+  CallExpr *Call;
+
+  /// Carries some enclosing context information, such as the access
+  /// level within a class with the metaprogram was encountered, so
+  /// that newly generated decls from the metaprogram can use them.
+  MetaprogramContext MetaCtx;
+
+  /// Used by metaprograms within function bodies, accessed in ActOnDeclStmt.
+  StmtResult sr;
+
+  /// Also used by metaprograms within function bodies.
+  Expr *LambdaExpr;
+
+  /// The metaprogram from which this declaration was instantiated, if any.
+  MetaprogramDecl *InstantiatedFrom;
+
+  /// Keeps track of whether the metaprogram statements contain dependencies.
+  bool IsDependent;
+
+  /// Keeps track of whether the metaprogram has been performed
+  bool AlreadyRun;
+
+  MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc);
+  MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc,
+                  const MetaprogramContext &MetaCtx, FunctionDecl *Fn,
+                  MetaprogramDecl *InstantiatedFrom);
+  MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc,
+                  const MetaprogramContext &MetaCtx, CXXRecordDecl *Closure,
+                  MetaprogramDecl *InstantiatedFrom);
+
+public:
+  static MetaprogramDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                 SourceLocation KeywordLoc,
+                                 const MetaprogramContext &MetaCtx,
+                                 FunctionDecl *Fn,
+                                 MetaprogramDecl *InstFrom = nullptr) {
+    return new (Ctx, DC) MetaprogramDecl(DC, KeywordLoc, MetaCtx,
+                                         Fn, InstFrom);
+  }
+  static MetaprogramDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                 SourceLocation KeywordLoc,
+                                 const MetaprogramContext &MetaCtx,
+                                 CXXRecordDecl *Closure,
+                                 MetaprogramDecl *InstFrom = nullptr) {
+    return new (Ctx, DC) MetaprogramDecl(DC, KeywordLoc, MetaCtx,
+                                         Closure, InstFrom);
+  }
+  static MetaprogramDecl *CreateDeserialized(ASTContext &Ctx, unsigned ID) {
+    return new (Ctx, ID) MetaprogramDecl(nullptr, SourceLocation());
+  }
+
+  /// Provides various context details present at the location of the
+  /// metaprogram decl (e.g. the current access within a class)
+  /// to aid the interpretation of generated members.
+  MetaprogramContext getMetaprogramContext() const { return MetaCtx; }
+
+  /// Metaprograms within function bodies use a lambda representation;
+  /// this will return a nonnull expression only for such metaprograms.
+  Expr *getImplicitLambdaExpr() const          { return LambdaExpr; }
+  void setImplicitLambdaExpr(Expr *val)        { LambdaExpr = val; }
+
+  /// For metaprograms within function bodies, this holds the
+  /// the meta-parsed StmtResult, so it can be passed along during
+  /// ActOnDeclStmt for this MetaprogramDecl.  (This isn't needed in
+  /// e.g. class templates because we can meta-parse directly
+  /// into their instantiations; only within function templates
+  /// must we deal with an intermediary StmtResult.)
+  StmtResult getStmtResult() const     { return sr; }
+  void setStmtResult(StmtResult val)   { sr = val; }
+
+  /// Whether the metaprogram statements contain dependencies (such
+  /// that it is not ready to be evaluated.)
+  bool isDependent() const             { return IsDependent; }
+  void setDependent(bool V = true)     { IsDependent = V; }
+
+  /// Whether the metaprogram has been run yet (always false if isDependent()).
+  bool alreadyRun() const             { return AlreadyRun; }
+  void setAlreadyRun(bool V = true)   { AlreadyRun = V; }
+
+  /// Whether this is represented as a function
+  /// (indicating it was either written inside a class, or in the
+  /// global context -- i.e. *not* written inside a function).
+  bool hasFunctionRepresentation() const {
+    return Representation.is<FunctionDecl *>();
+  }
+
+  /// Whether if this is represented as a lambda expression
+  /// (indicating it was written inside a function).
+  bool hasLambdaRepresentation() const {
+    return Representation.is<CXXRecordDecl *>();
+  }
+
+  /// Returns the function representation of the declaration.
+  FunctionDecl *getImplicitFunctionDecl() const {
+    return Representation.get<FunctionDecl *>();
+  }
+  void setImplicitFunctionDecl(FunctionDecl *D) {
+    Representation = D;
+  }
+
+  /// Returns the closure declaration for the lambda expression.
+  CXXRecordDecl *getImplicitClosureDecl() const {
+    return Representation.get<CXXRecordDecl *>();
+  }
+  void setImplicitClosureDecl(CXXRecordDecl *D) {
+    Representation = D;
+  }
+
+  /// Returns the call operator of the closure.
+  CXXMethodDecl *getImplicitClosureCallOperator() const {
+    assert(hasLambdaRepresentation() &&
+           "metaprogram is not represented by a lambda expression");
+    return getImplicitClosureDecl()->getLambdaCallOperator();
+  }
+
+  /// Returns \c true if the metaprogram has a body.
+  bool hasBody() const override;
+
+  /// Returns the body of the metaprogram.
+  Stmt *getBody() const override;
+
+  /// Returns the expression that evaluates the metaprogram.
+  CallExpr *getImplicitCallExpr() const { return Call; }
+  void setImplicitCallExpr(CallExpr *E) { Call = E; }
+
+  /// Returns the dependent MetaprogramDecl from which
+  /// this was instantiated, if any.
+  MetaprogramDecl *getInstantiatedFrom() const {
+    return InstantiatedFrom;
+  }
+  void setInstantiatedFrom(MetaprogramDecl *D) {
+    InstantiatedFrom = D;
+  }
+
+  /// Returns whether this was created by a template instantiation
+  bool isInstantiation() const { return InstantiatedFrom; }
+
+  SourceRange getSourceRange() const override;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Metaprogram; }
+
+  friend class ASTDeclReader;
 };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier

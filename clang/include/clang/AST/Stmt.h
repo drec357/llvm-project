@@ -13,6 +13,7 @@
 #ifndef LLVM_CLANG_AST_STMT_H
 #define LLVM_CLANG_AST_STMT_H
 
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/AST/DependenceFlags.h"
 #include "clang/AST/StmtIterator.h"
@@ -999,6 +1000,27 @@ protected:
     SourceLocation Loc;
   };
 
+  //===--- Generic bitfields ---===//
+  class HasArbitraryArgsBitfields {
+    friend class ASTStmtReader;
+    template<typename CRTP, typename BASE>
+    friend class HasArbitraryParenExprArgs;
+
+    unsigned : NumExprBits;
+
+    unsigned : 32 - 1 - NumExprBits;
+
+    /// The number of arguments used in the statement or expression.
+    unsigned NumArgs;
+  };
+  enum { NumHasArbitraryArgsBits = NumExprBits };
+
+  // If you need to add special bitfields for Stmts or Exprs with arbitrary
+  // args, keep these updated, and static assert that your bitfield doesn't
+  // encroach on NumArgs:
+  enum { NumStmtWithArbitraryArgsBits = NumHasArbitraryArgsBits };
+  enum { NumExprWithArbitraryArgsBits = NumHasArbitraryArgsBits };
+
   union {
     // Same order as in StmtNodes.td.
     // Statements
@@ -1076,6 +1098,10 @@ protected:
 
     // Clang Extensions
     OpaqueValueExprBitfields OpaqueValueExprBits;
+
+    // Bits for a generic statement/expression that can have a variable
+    // number of arguments.
+    HasArbitraryArgsBitfields HasArbitraryArgsBits;
   };
 
 public:
@@ -3713,6 +3739,238 @@ public:
   child_range children();
 
   const_child_range children() const;
+};
+
+//===--- Helper CRTP bases for Stmts/Exprs with common structure ---===//
+/// HasArbitraryParenExprArgs - a CRTP template which may be used as a base
+/// for statements or expressions that feature an arbitrary number of Expr *
+/// arguments, written in parentheses.
+/// The intent of this template is to establish a standard interface for
+/// such statements.
+template<typename CRTP, typename BASE>
+class HasArbitraryParenExprArgs
+    : public BASE,
+      public llvm::TrailingObjects<CRTP, Expr *> {
+protected:
+  using TrailingObjectsBase = llvm::TrailingObjects<CRTP, Expr *>;
+
+  // We have to publicly inherit llvm::TrailingObjects for casting reasons,
+  // so we'll manually move each of its public members out of the public
+  // interface:
+  using TrailingObjectsBase::getTrailingObjects;
+  using TrailingObjectsBase::additionalSizeToAlloc;
+  using TrailingObjectsBase::totalSizeToAlloc;
+
+  friend class ASTStmtReader;
+
+  template<typename, typename>
+  friend class TrailingObjects;
+
+  /// The location of the left parentheses ('(').
+  SourceLocation LParenLoc;
+
+  /// The location of the right parentheses (')').
+  SourceLocation RParenLoc;
+
+  /// LParenLoc, Args, and RParenLoc, followed by the BASE's params:
+  template<typename... ARGs>
+  HasArbitraryParenExprArgs(SourceLocation LParenLoc,
+                            ArrayRef<Expr *> Args,
+                            SourceLocation RParenLoc,
+                            ARGs&&... baseargs)
+    : BASE(std::forward<ARGs>(baseargs)...),
+      LParenLoc(LParenLoc),
+      RParenLoc(RParenLoc)
+  {
+    Stmt::HasArbitraryArgsBits.NumArgs = Args.size();
+    auto **StoredArgs = TrailingObjectsBase::
+        template getTrailingObjects<Expr *>();
+    std::copy(Args.begin(), Args.end(), StoredArgs);
+  }
+
+  /// Construct an empty object.  Pass e.g. EmptyShell etc. as the base args.
+  template<typename... ARGs>
+  HasArbitraryParenExprArgs(std::size_t NumArgs, ARGs&&... baseargs)
+    : BASE(std::forward<ARGs>(baseargs)...) {
+    Stmt::HasArbitraryArgsBits.NumArgs = NumArgs;
+  }
+
+  template<typename... Ts>
+  static CRTP *Create(const ASTContext &Context,
+                      SourceLocation LParenLoc, ArrayRef<Expr *> Args,
+                      SourceLocation RParenLoc, Ts&&... otherargs) {
+    void *Mem = Context.Allocate(TrailingObjectsBase::template
+                                 totalSizeToAlloc<Expr *>(Args.size()));
+    return new (Mem) CRTP(LParenLoc, Args, RParenLoc,
+                          std::forward<Ts>(otherargs)...);
+  }
+
+public:
+  /// Creates an empty statement/expression.
+  static CRTP *CreateEmpty(const ASTContext &Context, unsigned NumArgs) {
+    void *Mem = Context.Allocate(TrailingObjectsBase::template
+                                 totalSizeToAlloc<Expr *>(NumArgs));
+    return new (Mem) CRTP(Stmt::EmptyShell(), NumArgs);
+  }
+
+  /// Retrieve the number of arguments.
+  std::size_t arg_size() const { return Stmt::HasArbitraryArgsBits.NumArgs; }
+  std::size_t getNumArgs() const { return Stmt::HasArbitraryArgsBits.NumArgs; }
+
+  using arg_iterator = Expr **;
+  using arg_range = llvm::iterator_range<arg_iterator>;
+
+  arg_iterator arg_begin() {
+    return TrailingObjectsBase::template getTrailingObjects<Expr *>();
+  }
+  arg_iterator arg_end() { return arg_begin() + arg_size(); }
+  arg_range arguments() { return arg_range(arg_begin(), arg_end()); }
+  arg_range getArgs() { return arguments(); }
+  Expr *getArg(std::size_t I) {
+    assert(I < arg_size() && "Argument index out-of-range");
+    return arg_begin()[I];
+  }
+
+  using const_arg_iterator = const Expr* const *;
+  using const_arg_range = llvm::iterator_range<const_arg_iterator>;
+
+  const_arg_iterator arg_begin() const {
+    return TrailingObjectsBase::template getTrailingObjects<Expr *>();
+  }
+  const_arg_iterator arg_end() const { return arg_begin() + arg_size(); }
+  const_arg_range arguments() const {
+    return const_arg_range(arg_begin(), arg_end());
+  }
+  const_arg_range getArgs() const { return arguments(); }
+  const Expr *getArg(std::size_t I) const {
+    assert(I < arg_size() && "Argument index out-of-range");
+    return arg_begin()[I];
+  }
+
+  void setArg(std::size_t I, Expr *E) {
+    assert(I < arg_size() && "Argument index out-of-range");
+    arg_begin()[I] = E;
+  }
+
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    if (!RParenLoc.isValid() && arg_size() > 0)
+      return getArg(arg_size() - 1)->getEndLoc();
+    return RParenLoc;
+  }
+
+  // Iterators
+  Stmt::child_range children() {
+    auto **begin = reinterpret_cast<Stmt **>(arg_begin());
+    return Stmt::child_range(begin, begin + arg_size());
+  }
+
+  Stmt::const_child_range children() const {
+    auto **begin = reinterpret_cast<Stmt **>(
+        const_cast<HasArbitraryParenExprArgs *>(this)->arg_begin());
+    return Stmt::const_child_range(begin, begin + arg_size());
+  }
+
+  // Parentheses:
+  /// Retrieve the location of the left parentheses ('(') that
+  /// precedes the argument list.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  void setLParenLoc(SourceLocation L) { LParenLoc = L; }
+
+  /// Retrieve the location of the right parentheses (')') that
+  /// follows the argument list.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  using Stmt::StmtClass;
+  using Stmt::EmptyShell;
+};
+
+/// Same as HasArbitraryParenExprArgs, but adds a KeywordLoc param --
+/// so this can help implement any Stmt/Expr which consists of a keyword
+/// followed by arbitrary Expr * arguments in parentheses.
+template<typename CRTP, typename BASE>
+class HasKWAndArbitraryParenExprArgs
+    : public HasArbitraryParenExprArgs<CRTP, BASE> {
+  using ImplBase = HasArbitraryParenExprArgs<CRTP, BASE>;
+protected:
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+  using TrailingObjectsBase = llvm::TrailingObjects<CRTP, Expr *>;
+
+  SourceLocation KeywordLoc;
+
+  /// KeywordLoc arg followed by same args as HasArbitraryParenExprArgs ctor
+  template<typename... ARGs>
+  HasKWAndArbitraryParenExprArgs(SourceLocation KeywordLoc,
+                                 SourceLocation LParenLoc,
+                                 ArrayRef<Expr *> Args,
+                                 SourceLocation RParenLoc,
+                                 ARGs&&... baseargs)
+    : ImplBase(LParenLoc, Args, RParenLoc,
+               std::forward<ARGs>(baseargs)...),
+      KeywordLoc(KeywordLoc) {}
+
+  /// Construct an empty statement/expression.
+  template<typename... ARGs>
+  HasKWAndArbitraryParenExprArgs(std::size_t NumArgs, ARGs&&... baseargs)
+    : ImplBase(NumArgs, std::forward<ARGs>(baseargs)...) {}
+
+  template<typename... ARGs>
+  static CRTP *Create(const ASTContext &Context, SourceLocation KeywordLoc,
+                      SourceLocation LParenLoc,ArrayRef<Expr *> Args,
+                      SourceLocation RParenLoc, ARGs&&... otherargs) {
+    void *Mem = Context.Allocate(TrailingObjectsBase::template
+                                 totalSizeToAlloc<Expr *>(Args.size()));
+    return new (Mem) CRTP(KeywordLoc, LParenLoc, Args,
+                          RParenLoc, std::forward<ARGs>(otherargs)...);
+  }
+
+public:
+  /// Creates an empty statement/expression.
+  static CRTP *CreateEmpty(const ASTContext &Context, unsigned NumArgs) {
+    void *Mem = Context.Allocate(TrailingObjectsBase::template
+                                 totalSizeToAlloc<Expr *>(NumArgs));
+    return new (Mem) CRTP(Stmt::EmptyShell(), NumArgs);
+  }
+
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+  void setKeywordLoc(SourceLocation L) { KeywordLoc = L; }
+
+  SourceLocation getBeginLoc()   const { return KeywordLoc; }
+
+  using typename ImplBase::arg_iterator;
+  using typename ImplBase::arg_range;
+  using typename ImplBase::const_arg_iterator;
+  using typename ImplBase::const_arg_range;
+};
+
+///A statement instance of the above template.
+template<typename CRTP>
+class StmtWithKWAndArbitraryParenExprArgs
+    : public HasKWAndArbitraryParenExprArgs<CRTP, Stmt> {
+  using ImplBase = HasKWAndArbitraryParenExprArgs<CRTP, Stmt>;
+public:
+  using ImplBase::Create;
+  using ImplBase::CreateEmpty;
+  using typename ImplBase::arg_iterator;
+  using typename ImplBase::arg_range;
+  using typename ImplBase::const_arg_iterator;
+  using typename ImplBase::const_arg_range;
+  using typename Stmt::StmtClass;
+  using typename Stmt::EmptyShell;
+
+protected:
+  StmtWithKWAndArbitraryParenExprArgs(SourceLocation KeywordLoc,
+                                      SourceLocation LParenLoc,
+                                      ArrayRef<Expr *> Args,
+                                      SourceLocation RParenLoc,
+                                      Stmt::StmtClass SC)
+    : ImplBase(KeywordLoc, LParenLoc, Args, RParenLoc, SC) {}
+
+  // Construct an empty statement.
+  StmtWithKWAndArbitraryParenExprArgs(std::size_t NumArgs,
+                                      StmtClass SC, EmptyShell Empty)
+    : ImplBase(NumArgs, SC, Empty) {}
 };
 
 } // namespace clang

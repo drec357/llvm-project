@@ -4854,10 +4854,77 @@ static bool EvaluateCond(EvalInfo &Info, const VarDecl *CondDecl,
   return Scope.destroy();
 }
 
+//===--- String literal evaluation and creation ---===//
+static bool EvaluateAsString(const StringLiteral *&StrLitRes,
+                             EvalInfo &Info, const Expr *E) {
+  assert(!E->isValueDependent());
+  assert(!E->isTypeDependent());
+
+  APValue Res;
+  if (!Evaluate(Res, Info, E)) {
+    Info.FFDiag(E->getBeginLoc(), diag::err_constexpr_eval_failed);
+    return false;
+  }
+
+  assert(Res.isLValue() &&
+         "Expected an LValue here, but you can try "
+         "commenting this out to see what happens");
+
+  // Fetch the StringLiteral from the evaluation result:
+  APValue::LValueBase Base = Res.getLValueBase();
+
+  if (Base.is<const Expr *>()) {
+    const Expr *BaseExpr = Base.get<const Expr *>();
+    assert(isa<StringLiteral>(BaseExpr) && "Not a string literal");
+    StrLitRes = cast<StringLiteral>(BaseExpr);
+    assert(StrLitRes);
+    return true;
+  }
+  else {
+    const ValueDecl *D = Base.get<const ValueDecl *>();
+    assert(D && "Expected the LValueBase to either "
+                "be an Expr or a ValueDecl");
+    D->dump();
+    llvm_unreachable(
+          "The Evaluation result was just a ValueDecl, "
+          "e.g. a ParmVarDecl, rather than the *value of* that Decl."
+          "You probably should have done "
+          "defaultFunctionArrayLValueConversion "
+          "during the ActOn... that handles this expression.");
+  }
+}
+
+// Creates a c-string of type const char[N].
+static StringLiteral *
+MakeString(ASTContext &Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(
+      Ctx.CharTy.withConst(), llvm::APInt(32, Str.size() + 1), nullptr,
+      ArrayType::Normal, 0);
+
+  // Create a string literal of type const char [L] where L
+  // is the number of characters in the StringRef.
+  return StringLiteral::Create(
+      Ctx, Str, StringLiteral::Ascii, false, StrLitTy, Loc);
+}
+
+// Creates a c-string of type const char *.
+LLVM_ATTRIBUTE_UNUSED
+static Expr *
+MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  // Create an implicit cast expr so that we convert our const char [L]
+  // into an actual const char * for proper evaluation.
+  QualType StrTy = Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
+  return ImplicitCastExpr::Create(
+      Ctx, StrTy, CK_ArrayToPointerDecay,
+      MakeString(Ctx, Str, Loc), /*BasePath=*/nullptr,
+      VK_PRValue, FPOptionsOverride());
+}
+
+
 namespace {
 /// A location where the result (returned value) of evaluating a
 /// statement should be stored.
-struct StmtResult {
+struct StmtResultStorage {
   /// The APValue that should be filled in with the returned value.
   APValue &Value;
   /// The location containing the result, if any (used to support RVO).
@@ -4878,12 +4945,12 @@ struct TempVersionRAII {
 
 }
 
-static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
                                    const Stmt *S,
                                    const SwitchCase *SC = nullptr);
 
 /// Evaluate the body of a loop, and translate the result as appropriate.
-static EvalStmtResult EvaluateLoopBody(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateLoopBody(StmtResultStorage &Result, EvalInfo &Info,
                                        const Stmt *Body,
                                        const SwitchCase *Case = nullptr) {
   BlockScopeRAII Scope(Info);
@@ -4907,7 +4974,7 @@ static EvalStmtResult EvaluateLoopBody(StmtResult &Result, EvalInfo &Info,
 }
 
 /// Evaluate a switch statement.
-static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateSwitch(StmtResultStorage &Result, EvalInfo &Info,
                                      const SwitchStmt *SS) {
   BlockScopeRAII Scope(Info);
 
@@ -4980,7 +5047,7 @@ static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
 }
 
 // Evaluate a statement.
-static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
                                    const Stmt *S, const SwitchCase *Case) {
   if (!Info.nextStep(S))
     return ESR_Failed;
@@ -5150,10 +5217,9 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       // We know we returned, but we don't know what the value is.
       return ESR_Failed;
     }
-    if (RetExpr &&
-        !(Result.Slot
-              ? EvaluateInPlace(Result.Value, Info, *Result.Slot, RetExpr)
-              : Evaluate(Result.Value, Info, RetExpr)))
+    if (RetExpr && !(Result.Slot ? EvaluateInPlace(Result.Value, Info,
+                                                   *Result.Slot, RetExpr)
+                                 : Evaluate(Result.Value, Info, RetExpr)))
       return ESR_Failed;
     return Scope.destroy() ? ESR_Returned : ESR_Failed;
   }
@@ -5410,6 +5476,45 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
   case Stmt::CXXTryStmtClass:
     // Evaluate try blocks by evaluating all sub statements.
     return EvaluateStmt(Result, Info, cast<CXXTryStmt>(S)->getTryBlock(), Case);
+
+  case Stmt::StringInjectionStmtClass: {
+    if (Info.checkingPotentialConstantExpression())
+      return ESR_Succeeded;
+
+    if (!Info.EvalStatus.MetaCodeChunks) {
+      // Only metaprograms can generate code.
+      Info.CCEDiag(S->getBeginLoc(), diag::note___inject_outside_metaprogram);
+      return ESR_Failed;
+    }
+
+    // Compute the source string to parse, and store it in Result.
+    const StringInjectionStmt *QMS = cast<StringInjectionStmt>(S);
+
+    const StringLiteral *CurStrLit;
+    SmallString<256> S;
+    for (const Expr *E : QMS->getArgs()) {
+      if (E->getType().isCXXStringLiteralType()) {
+        if (!EvaluateAsString(CurStrLit, Info, E))
+          return ESR_Failed;
+      } else {
+        assert(E->getType()->isIntegerType() &&
+               "Should have ensured int/strlit types before now");
+        llvm::APSInt Res;
+        if (!EvaluateInteger(E, Res, Info)) {
+          return ESR_Failed;
+        }
+        Res.toString(S, 10);
+        CurStrLit = MakeString(Info.Ctx, S.str(), E->getBeginLoc());
+        S.clear();
+      }
+      assert(CurStrLit);
+
+      // Queue the generated code string for later parsing
+      Info.EvalStatus.MetaCodeChunks->push_back(CurStrLit);
+    }
+
+    return ESR_Succeeded;
+  }
   }
 }
 
@@ -6120,7 +6225,7 @@ static bool HandleFunctionCall(SourceLocation CallLoc,
                                         Frame.LambdaThisCaptureField);
   }
 
-  StmtResult Ret = {Result, ResultSlot};
+  StmtResultStorage Ret = {Result, ResultSlot};
   EvalStmtResult ESR = EvaluateStmt(Ret, Info, Body);
   if (ESR == ESR_Succeeded) {
     if (Callee->getReturnType()->isVoidType())
@@ -6154,7 +6259,7 @@ static bool HandleConstructorCall(const Expr *E, const LValue &This,
   // FIXME: Creating an APValue just to hold a nonexistent return value is
   // wasteful.
   APValue RetVal;
-  StmtResult Ret = {RetVal, nullptr};
+  StmtResultStorage Ret = {RetVal, nullptr};
 
   // If it's a delegating constructor, delegate.
   if (Definition->isDelegatingConstructor()) {
@@ -6471,7 +6576,7 @@ static bool HandleDestructionImpl(EvalInfo &Info, SourceLocation CallLoc,
   // FIXME: Creating an APValue just to hold a nonexistent return value is
   // wasteful.
   APValue RetVal;
-  StmtResult Ret = {RetVal, nullptr};
+  StmtResultStorage Ret = {RetVal, nullptr};
   if (EvaluateStmt(Ret, Info, Definition->getBody()) == ESR_Failed)
     return false;
 
@@ -7882,7 +7987,7 @@ public:
       }
 
       APValue ReturnValue;
-      StmtResult Result = { ReturnValue, nullptr };
+      StmtResultStorage Result = { ReturnValue, nullptr };
       EvalStmtResult ESR = EvaluateStmt(Result, Info, *BI);
       if (ESR != ESR_Succeeded) {
         // FIXME: If the statement-expression terminated due to 'return',
@@ -14794,6 +14899,11 @@ bool Expr::EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx,
 
   LV.moveInto(Result.Val);
   return true;
+}
+
+bool Expr::EvaluateAsVoid(EvalResult &Result, const ASTContext &Ctx) const {
+  EvalInfo Info(Ctx, Result, EvalInfo::EM_ConstantFold); //FIXME EM right?
+  return ::EvaluateVoid(this, Info);
 }
 
 static bool EvaluateDestruction(const ASTContext &Ctx, APValue::LValueBase Base,

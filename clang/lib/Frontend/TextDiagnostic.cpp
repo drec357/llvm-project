@@ -1037,7 +1037,11 @@ static void highlightRange(const CharSourceRange &R,
     // range that just exists in whitespace. That most likely means we have
     // a multi-line highlighting range that covers a blank line.
     if (StartColNo > EndColNo) {
-      assert(StartLineNo != EndLineNo && "trying to highlight whitespace");
+      // FIXME: SourceLocations for injected strings always point to the
+      // beginning of the string, for now - ideally they should point inside
+      // the string, then we wouldn't need to disable this assert.
+      if (!LangOpts.StringInjection)
+        assert(StartLineNo != EndLineNo && "trying to highlight whitespace");
       StartColNo = EndColNo;
     }
   }

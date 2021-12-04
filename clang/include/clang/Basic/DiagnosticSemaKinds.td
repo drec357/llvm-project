@@ -2869,6 +2869,17 @@ def err_type_constraint_missing_arguments : Error<
 def err_placeholder_constraints_not_satisfied : Error<
   "deduced type %0 does not satisfy %1">;
 
+// String Injection
+def err_expected_int_or_str : Error<
+  "expected either integer or string operand">;
+def err_metaprogram_fold_failure : Error<
+  "Metaprogram's statements could not all be constant-evaluated">;
+
+// Custom diagnostics
+def err_user_defined_error : Error<"((%0))">;
+def warn_user_defined_warning : Warning<"((%0))">;
+def note_user_defined_note : Note<"((%0))">;
+
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
   "'%0' type specifier is incompatible with C++98">,

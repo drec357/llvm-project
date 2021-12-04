@@ -2416,6 +2416,16 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   PrintExpr(S->getOperand());
 }
 
+void StmtPrinter::VisitStringInjectionStmt(StringInjectionStmt *S) {
+  OS << " __inject(";
+  for (unsigned i = 0; i < S->arg_size(); ++i) {
+    if (i)
+      OS << ", ";
+    PrintExpr(S->getArg(i));
+  }
+  OS << ");";
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

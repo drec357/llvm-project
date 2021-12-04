@@ -2156,6 +2156,10 @@ void StmtProfiler::VisitSourceLocExpr(const SourceLocExpr *E) {
 
 void StmtProfiler::VisitRecoveryExpr(const RecoveryExpr *E) { VisitExpr(E); }
 
+void StmtProfiler::VisitStringInjectionStmt(const StringInjectionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitObjCStringLiteral(const ObjCStringLiteral *S) {
   VisitExpr(S);
 }

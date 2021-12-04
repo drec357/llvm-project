@@ -131,6 +131,7 @@ void clang::ParseAST(Sema &S, bool PrintStats, bool SkipFunctionBodies) {
   std::unique_ptr<Parser> ParseOP(
       new Parser(S.getPreprocessor(), S, SkipFunctionBodies));
   Parser &P = *ParseOP.get();
+  S.setParser(&P);
 
   llvm::CrashRecoveryContextCleanupRegistrar<const void, ResetStackCleanup>
       CleanupPrettyStack(llvm::SavePrettyStackState());

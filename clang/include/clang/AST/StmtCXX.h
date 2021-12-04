@@ -513,6 +513,59 @@ public:
   }
 };
 
+/// Represents an __inject statement (enabled via LangOpts.StringInjection).
+///
+/// When evaluated, queues the new source code to be
+/// lexed and processed at the end of the enclosing
+/// MetaprogramDecl (or the MetaprogramDecl enclosing the
+/// CallExpr calling some consteval function which
+/// contains the __inject statement).
+///
+/// Example:
+/// \code
+///   consteval f() { __inject("int bar = 4;"); }
+///   consteval { // (MetaprogramDecl)
+///     __inject("int", "foo =", 3, ";");
+///     //assert(foo==3); //ERROR
+///     f();
+///   } // queued injections performed here...
+///   assert(foo==3);
+///   assert(bar==4);
+/// \endcode
+class StringInjectionStmt final :
+    public StmtWithKWAndArbitraryParenExprArgs<StringInjectionStmt> {
+
+  using ImplBase = StmtWithKWAndArbitraryParenExprArgs<StringInjectionStmt>;
+  template<typename, typename>
+  friend class HasKWAndArbitraryParenExprArgs;
+
+  StringInjectionStmt(SourceLocation KeywordLoc, SourceLocation LParenLoc,
+                        ArrayRef<Expr *> Args, SourceLocation RParenLoc)
+    : ImplBase(KeywordLoc, LParenLoc, Args, RParenLoc,
+                 StringInjectionStmtClass) {}
+
+  StringInjectionStmt(EmptyShell Empty, unsigned NumArgs)
+    : ImplBase(NumArgs, StringInjectionStmtClass, Empty) {}
+
+public:
+  static StringInjectionStmt *Create(ASTContext &C,
+                                       SourceLocation KeywordLoc,
+                                       SourceLocation LParenLoc,
+                                       ArrayRef<Expr *> Args,
+                                       SourceLocation RParenLoc) {
+    return ImplBase::Create(C, KeywordLoc, LParenLoc, Args, RParenLoc);
+  }
+
+  static StringInjectionStmt *CreateEmpty(const ASTContext &C,
+                                            unsigned NumArgs) {
+    return ImplBase::CreateEmpty(C, NumArgs);
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == StringInjectionStmtClass;
+  }
+};
+
 }  // end namespace clang
 
 #endif

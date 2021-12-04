@@ -2913,6 +2913,8 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.IsMultiVersion = false;
   FunctionDeclBits.IsCopyDeductionCandidate = false;
   FunctionDeclBits.HasODRHash = false;
+  FunctionDeclBits.IsMetaprogram = false;
+  FunctionDeclBits.IsPatternWithMetaprogram = false;
   if (TrailingRequiresClause)
     setTrailingRequiresClause(TrailingRequiresClause);
 }

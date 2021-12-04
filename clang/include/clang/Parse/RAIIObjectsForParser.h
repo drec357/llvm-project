@@ -459,6 +459,168 @@ namespace clang {
     }
     void skipToEnd();
   };
+
+
+  /// ParserBrickWallRAII - stores old values of many Parser state variables,
+  /// to permit temporary parsing in a different context, without affecting
+  /// the old parser state.
+  ///
+  /// The goal is to erect a "brick wall" separating the old context from
+  /// the temporary one.  New lexers can then be pushed "in front of" the
+  /// brick wall and the temporary parsing can proceed with the assurance
+  /// that parsing will not accidentally eat into the content beyond the wall,
+  /// even in the event of errors.
+  ///
+  /// This is used to process __inject statements encountered in metaprograms;
+  /// e.g.:
+  /// \code
+  ///   template<int I>
+  ///   class MyClass {
+  ///     int varA;
+  ///     consteval {
+  ///       __inject( "int whoops = ", I, "[;" ); (
+  ///     }
+  ///   };
+  ///
+  ///   MyClass<3> /*to instantiate, we have to parse foo above.  Before doing
+  ///                so we create a brick wall.  This helps us detect the
+  ///                unterminated '[' in the __inject and recover without
+  ///                eating into\ the m below. */
+  ///              m;
+  ///
+  /// \endocode
+  ///
+  /// Note that these can be constructed recursively, which is
+  /// necessary when we encounter nested metaprograms:
+  /// \code
+  /// consteval {
+  ///   __inject("consteval { __inject(\"int i = 3;\"); }");
+  /// }
+  /// \endcode
+  ///
+  class ParserBrickWallRAII {
+    class JustTheParserVariables {
+      friend class ParserBrickWallRAII;
+      Parser *TheParser;
+      bool Valid = true;
+      bool ShouldCallDestructor = true;
+
+    public:
+      JustTheParserVariables(Parser &P);
+      JustTheParserVariables(JustTheParserVariables &&other);
+      ~JustTheParserVariables();
+      void setInvalid();
+    } SavedParseState;
+
+    class PreprocessorBrickWallRAII {
+      friend class ParserBrickWallRAII;
+      Preprocessor &PP;
+      const size_t OldTotalNumLexersAtRAIIConstruction;
+      bool OldParsingFromInjectedStrBool;
+      decltype(PP.CachedTokens) SavedCachedTokens;
+      decltype(PP.CachedLexPos) SavedCachedLexPos;
+      decltype(PP.BacktrackPositions) SavedBacktrackPositions;
+      bool Valid = true;
+      bool ShouldCallDestructor = true;
+    public:
+      PreprocessorBrickWallRAII(Preprocessor &ThePP);
+      PreprocessorBrickWallRAII(PreprocessorBrickWallRAII &&other);
+      ~PreprocessorBrickWallRAII();
+      /// Used in ~ParserBrickWallRAII() (NOT in ~JustTheParserVariables())
+      /// BEFORE the SavedPreprocessorState destruction
+      /// to clear out any dead lexers -- (only TokenLexers I think) left over
+      /// by late parsing.
+      void setInvalid();
+
+      void clearAnyDeadLexers();
+      bool TotalLexers_Equals_TotalLexersAtRAIIConstruction() const {
+        return PP.getTotalNumLexers() == PP.TotalNumLexersAtRAIIConstruction;
+      }
+    } SavedPreprocessorState;
+    bool Valid = true;
+  public:
+    ParserBrickWallRAII(Parser &P);
+    ParserBrickWallRAII(ParserBrickWallRAII &&other);
+    ParserBrickWallRAII(const ParserBrickWallRAII &) = delete;
+    ~ParserBrickWallRAII();
+
+    void setInvalid();
+    bool PPTotalLexers_Equals_TotalLexersAtRAIIConstruction() const {
+      return SavedPreprocessorState.
+          TotalLexers_Equals_TotalLexersAtRAIIConstruction();
+    }
+  };
+
+  /// Saves/restores the state of the Sema::PII field (i.e. the thing returned
+  /// by \c S.getParsingIntoInstantiationStatus() ).
+  class SemaPIIRAII {
+    Sema &SemaRef;
+    decltype(SemaRef.PII) OldPII;
+    bool Exited = false;
+  public:
+    SemaPIIRAII(Sema &SemaRef) : SemaRef(SemaRef), OldPII(SemaRef.PII) {}
+    SemaPIIRAII(Sema &SemaRef, decltype(SemaRef.PII) NewPII);
+    SemaPIIRAII(const SemaPIIRAII &) = delete;
+    SemaPIIRAII(SemaPIIRAII &&other);
+    ~SemaPIIRAII();
+    /// Exit early
+    void Exit();
+  };
+
+  /// A \c ParserBrickWallRAII subclass which also manages Sema scope fields
+  /// for proper lookup; then on destruction returns
+  /// the parser and TheSema.CurScope to their original states.
+  class TempParseIntoDiffScope : public ParserBrickWallRAII {
+    Sema &TheSema;
+    Scope *OldScope;
+    SemaPIIRAII SavedPIIState;
+    bool ShouldCallDestructor = true;
+  public:
+    TempParseIntoDiffScope(Sema &S, Sema::ParsingIntoInstantiation NewPII,
+                           unsigned ScopeFlags);
+    TempParseIntoDiffScope(TempParseIntoDiffScope &&other);
+    TempParseIntoDiffScope(const TempParseIntoDiffScope &) = delete;
+    ~TempParseIntoDiffScope();
+  };
+
+  /// A \c TempParseIntoDiffScope subclass which also manages any Sema
+  /// fields needed to parse into a class instantiation.
+  ///
+  /// \code
+  ///   template<typename T>
+  ///   struct Tmpl {
+  ///     T varA;
+  ///     consteval {
+  ///       __inject("int varB");
+  ///     }
+  ///     char varD;
+  ///   };
+  ///   Tmpl<float> /*TempParseIntoClassInstantiation CREATED HERE,
+  ///                *in InstantiateClass*/ myinstantiation;
+  /// \endcode
+  ///
+  /// During instantiation of Tmpl<float> (which occurs just before parsing
+  /// the identifier "myinstantiation"), we will need to do temporary parsing.
+  /// We want a brick wall to be sure our parsing doesn't creep beyond the
+  /// current parse state (i.e. into myinstantiation); however we need more
+  /// than that: we will also to temporarily set up the context and scope of the
+  /// instantiation so that we may parse directly into it and do lookup from it,
+  /// and then when we're done restore the original parse state, context, scope,
+  /// etc.
+  class TempParseIntoClassInstantiation : public TempParseIntoDiffScope {
+    Parser::ParsingClassDefinition Pcd;
+  public:
+    TempParseIntoClassInstantiation(Sema &S, bool IsInterface);
+    ~TempParseIntoClassInstantiation();
+  };
+
+  /// A \c TempParseIntoDiffScope subclass which also manages Sema
+  /// details needed for parsing into a function instantiation.
+  class TempParseIntoFuncInstantiation : public TempParseIntoDiffScope {
+  public:
+    TempParseIntoFuncInstantiation(Sema &S);
+    ~TempParseIntoFuncInstantiation();
+  };
 } // end namespace clang
 
 #endif
