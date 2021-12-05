@@ -4884,7 +4884,7 @@ static bool EvaluateAsString(const StringLiteral *&StrLitRes,
     const ValueDecl *D = Base.get<const ValueDecl *>();
     assert(D && "Expected the LValueBase to either "
                 "be an Expr or a ValueDecl");
-    D->dump();
+//    D->dump();
     llvm_unreachable(
           "The Evaluation result was just a ValueDecl, "
           "e.g. a ParmVarDecl, rather than the *value of* that Decl."
@@ -5481,18 +5481,17 @@ static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    if (!Info.EvalStatus.MetaCodeChunks) {
+    if (!Info.EvalStatus.StringInjectionChunks) {
       // Only metaprograms can generate code.
-      Info.CCEDiag(S->getBeginLoc(), diag::note___inject_outside_metaprogram);
+      Info.CCEDiag(S->getBeginLoc(), diag::note___inj_outside_metaprogram);
       return ESR_Failed;
     }
 
     // Compute the source string to parse, and store it in Result.
-    const StringInjectionStmt *QMS = cast<StringInjectionStmt>(S);
-
+    const StringInjectionStmt *SIS = cast<StringInjectionStmt>(S);
     const StringLiteral *CurStrLit;
-    SmallString<256> S;
-    for (const Expr *E : QMS->getArgs()) {
+    SmallString<128> S;
+    for (const Expr *E : SIS->getArgs()) {
       if (E->getType().isCXXStringLiteralType()) {
         if (!EvaluateAsString(CurStrLit, Info, E))
           return ESR_Failed;
@@ -5510,9 +5509,8 @@ static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
       assert(CurStrLit);
 
       // Queue the generated code string for later parsing
-      Info.EvalStatus.MetaCodeChunks->push_back(CurStrLit);
+      Info.EvalStatus.StringInjectionChunks->push_back(CurStrLit);
     }
-
     return ESR_Succeeded;
   }
   }

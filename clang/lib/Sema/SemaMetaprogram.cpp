@@ -308,8 +308,8 @@ bool Sema::EvaluateMetaprogramDeclCall(MetaprogramDecl *MpD,
   Expr::EvalResult Result;
   Result.Diag = &Notes;
 
-  SmallVector<const StringLiteral *, 16> MetaCodeChunks; //DWR ADDN
-  Result.MetaCodeChunks = &MetaCodeChunks; //DWR ADDN
+  SmallVector<const StringLiteral *, 16> StringInjectionChunks; //DWR ADDN
+  Result.StringInjectionChunks = &StringInjectionChunks; //DWR ADDN
 
   assert(Call->getType()->isVoidType());
   if (!Call->EvaluateAsVoid(Result, Context)) {
@@ -337,13 +337,12 @@ bool Sema::EvaluateMetaprogramDeclCall(MetaprogramDecl *MpD,
 
   SourceLocation POI = MpD->getSourceRange().getEnd();
 
-  // Perform metaparsing if necessary:
-  if (!MetaCodeChunks.empty()) {
+  // Perform injected string parsing if necessary:
+  if (!StringInjectionChunks.empty()) {
     ParserBrickWallRAII SavedParserState(getParser());
-    DoQueuedMetaparsing(POI, MetaCodeChunks, MpD);
-    if (Decl::castFromDeclContext(CurContext)->isInvalidDecl()) {
-      SavedParserState.setInvalid(); //disables certain checks destruction
-    }
+    InjectQueuedStrings(POI, StringInjectionChunks, MpD);
+    if (Decl::castFromDeclContext(CurContext)->isInvalidDecl())
+      SavedParserState.setInvalid(); //disables certain checks on destruction
   }
 
   // FIXME: Do we really want to remove the metaprogram after evaluation? Or
@@ -354,19 +353,21 @@ bool Sema::EvaluateMetaprogramDeclCall(MetaprogramDecl *MpD,
 }
 
 StmtResult Sema::ActOnStringInjectionStmt(SourceLocation KeywordLoc,
-                                            SourceLocation LParenLoc,
-                                            ArrayRef<Expr *> Args,
-                                            SourceLocation RParenLoc,
-                                            bool AnyDependent) {
+                                          SourceLocation LParenLoc,
+                                          ArrayRef<Expr *> Args,
+                                          SourceLocation RParenLoc,
+                                          bool AnyDependent,
+                                          StringLiteral *WrittenFirstArg) {
   if (!AnyDependent && !PrepareStrIntArgsForEval(Args))
     return StmtError();
   return StringInjectionStmt::Create(Context, KeywordLoc, LParenLoc,
-                                       Args, RParenLoc);
+                                       Args, RParenLoc, WrittenFirstArg);
 }
 
 void Sema::TheParserEnterScope(unsigned int ScopeFlags) {
   TheParser->EnterScope(ScopeFlags);
 }
+
 void Sema::TheParserExitScope() {
   TheParser->ExitScope();
 }
@@ -382,12 +383,12 @@ static DeclSpec::TST getTypeSpecForTagTypeKind(TagTypeKind Kind) {
 }
 
 bool Sema::
-DoQueuedMetaparsing(SourceLocation POI,
-                    ArrayRef<const StringLiteral *> MetaCodeChunks,
+InjectQueuedStrings(SourceLocation POI,
+                    ArrayRef<const StringLiteral *> StringInjectionChunks,
                     MetaprogramDecl *MpD) {
-  assert(!MetaCodeChunks.empty() &&
+  assert(!StringInjectionChunks.empty() &&
           "Should have checked if there were any "
-          "MetaCodeChunks before calling DoQueuedMetaparsing");
+          "StringInjectionChunks before calling InjectQueuedStrings");
 
   assert(TheParser &&
          "Should have called setParser(...) on the Sema object "
@@ -424,8 +425,8 @@ DoQueuedMetaparsing(SourceLocation POI,
           false, RBraceStrLitTy, rbraceloc);
     PP.PushGeneratedSrcStr(rbracestrlit->getString(), rbraceloc);
 
-    for (auto strlitit = MetaCodeChunks.rbegin();
-        strlitit != MetaCodeChunks.rend();
+    for (auto strlitit = StringInjectionChunks.rbegin();
+        strlitit != StringInjectionChunks.rend();
         ++strlitit)
     {
       const StringLiteral *strlit = *strlitit;
@@ -550,14 +551,14 @@ DoQueuedMetaparsing(SourceLocation POI,
       }
 
       // When you have multiple statements/decls
-      // in a single argument of an __inject(...),
-      // e.g. __inject("int i; float f;"),
+      // in a single argument of an __inj(...),
+      // e.g. __inj("int i; float f;"),
       // then you won't have an invalid token after
       // parsing the first statement/decl.
-      // But after the last one in the __inject(...)
+      // But after the last one in the __inj(...)
       // statement you WILL have an invalid token.
       // BUT that's not all -- if you use a call to a constexpr
-      // function that contains an __inject(...) statement, that
+      // function that contains an __inj(...) statement, that
       // seems to add an ADDITIONAL invalid token -- hence the need
       // for a while loop here (AND in the ParseCompoundStmtBody version).
       while (TheParser->getCurToken().getLocation().isInvalid()
@@ -567,7 +568,7 @@ DoQueuedMetaparsing(SourceLocation POI,
              ) {
         TheParser->ConsumeToken();
       }
-    } //end metaparsing loop
+    } //end injected string parsing loop
 
     // Consume the dummy r_brace we entered above, and make sure
     // that concludes the metaprogram
@@ -604,14 +605,13 @@ static bool CheckIsIntOrStr(Sema &SemaRef, Expr *E) {
 /// This will change Args.
 /// Only call when all Args are non-dependent.
 bool Sema::PrepareStrIntArgsForEval(ArrayRef<Expr *> Args) {
-  // Convert operands to rvalues
-  // to prepare for evaluation:
+  // Convert operands to rvalues to prepare for evaluation:
   for (auto argit = Args.begin(); argit != Args.end(); ++argit) {
     // Decay arrays first.
     ExprResult R = DefaultFunctionArrayLvalueConversion(*argit);
     if (R.isInvalid())
       return false;
-    // Check that the operand (type) is acceptable.
+    // Check that the operand type is acceptable.
     if (!CheckIsIntOrStr(*this, *argit))
       return false;
 

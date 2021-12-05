@@ -594,8 +594,8 @@ def warn_unnecessary_packed : Warning<
 // String Injection
 def err_constexpr_eval_failed : Error<
   "Failed to constant-evaluate expression">; //FIXME redundant or pathological
-def note___inject_outside_metaprogram : Note<
-  "__inject statements are only valid inside metaprograms, or in "
+def note___inj_outside_metaprogram : Note<
+  "__inj statements are only valid inside metaprograms, or in "
   "consteval functions ultimately called from metaprograms">;
 def err_metaparse_extraneous_chars : Error<
   "extraneous character(s) in __metaparse_expr, beginning with %0">;

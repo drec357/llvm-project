@@ -75,7 +75,7 @@ class Parser : public CodeCompletionHandler {
                        bool Complain);
   friend void Sema::ActOnFinishMetaprogramDecl(Scope *S, Decl *D, Stmt *Body);
   friend bool Sema::
-      DoQueuedMetaparsing(SourceLocation POI,
+      InjectQueuedStrings(SourceLocation POI,
                           ArrayRef<const StringLiteral *> InjectedStringChunks,
                           MetaprogramDecl *MD);
 
@@ -467,10 +467,6 @@ public:
   void incrementMSManglingNumber() const {
     return Actions.incrementMSManglingNumber();
   }
-
-  /// True if currently parsing the content of string literals we
-  /// have evaluated earlier in the program (via \c __inject(...) statements).
-  bool IsMetaParsingInjectedStrings() const;
 
   Decl  *getObjCDeclContext() const { return Actions.getObjCDeclContext(); }
 
@@ -3541,20 +3537,20 @@ private:
                                          SourceLocation &RParenLoc,
                                          bool &AnyDependent);
 
-  /// Parse an __inject(...) statement
-  StmtResult ParseStringInjectionStmt();
+  /// Parse an __inj(...) or __injf(...) statement
+  StmtResult ParseStringInjectionStmt(bool IsSpelledWithF);
 
   /// Parse a __metaparse_cast expression
   ExprResult ParseCXXMetaparseCastExpr();
 
   /// Parse a metaprogram.
-  /// \param MetaCtx: holds data needed by the Parser for metaparsing
+  /// \param MetaCtx: holds data needed by the Parser for injected string parsing
   /// \param Nested: if this is being parsed while processing another
   /// metaprogram (I.e., if this is called while doing a template instantiation
   /// that was needed while parsing another metaprogram.  "Nested" does *not*
   /// refer to e.g. constexpr { constexpr { ... } }, but rather to e.g.
   /// \code
-  ///   constexpr { __inject("constexpr { ... }"); } //Nested = true for inner
+  ///   constexpr { __inj("constexpr { ... }"); } //Nested = true for inner
   /// \endcode
   DeclGroupPtrTy ParseMetaprogram(struct MetaprogramContext &MetaCtx,
                                   bool Nested);

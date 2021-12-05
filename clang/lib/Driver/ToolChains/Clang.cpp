@@ -6182,15 +6182,15 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fcoroutines-ts");
   }
 
+  Args.AddLastArg(CmdArgs, options::OPT_fdouble_square_bracket_attributes,
+                  options::OPT_fno_double_square_bracket_attributes);
+
   // -fstring-injection is off by default, as it is experimental.
   if (Args.hasFlag(options::OPT_fstring_injection,
 		   options::OPT_fno_string_injection, false) &&
       types::isCXX(InputType)) {
     CmdArgs.push_back("-fstring-injection");
   }
-
-  Args.AddLastArg(CmdArgs, options::OPT_fdouble_square_bracket_attributes,
-                  options::OPT_fno_double_square_bracket_attributes);
 
   // -faccess-control is default.
   if (Args.hasFlag(options::OPT_fno_access_control,

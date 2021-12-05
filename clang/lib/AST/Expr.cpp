@@ -1099,7 +1099,7 @@ StringLiteral::StringLiteral(const ASTContext &Ctx, StringRef Str,
 
   // Initialize the trailing array of char holding the string data.
   // [StringInjection]: +1 to ByteLength to null-terminate
-  // (necessary only for any string literals which are parsed vian __inject
+  // (necessary only for any string literals which are parsed vian __inj
   // statements, though we impose the cost on all string literals
   // since that cost seems small).
   if (Ctx.getLangOpts().StringInjection) {

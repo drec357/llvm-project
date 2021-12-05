@@ -494,6 +494,7 @@ void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
 
 void ASTStmtReader::VisitStringInjectionStmt(StringInjectionStmt *S) {
   VisitStmt(S);
+  S->setWrittenFirstArg(cast<StringLiteral>(Record.readSubExpr()));
   unsigned NumArgs = Record.readInt();
   assert((NumArgs == S->getNumArgs()) && "Wrong NumArgs!");
   S->setKeywordLoc(readSourceLocation());

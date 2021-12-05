@@ -2108,7 +2108,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     return true;
 
   case Stmt::StringInjectionStmtClass:
-    // __inject is a compile-time statement.
+    // __inj/__injf are compile-time statements.
     return true;
 
 

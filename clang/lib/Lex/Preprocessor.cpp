@@ -1523,7 +1523,7 @@ void Preprocessor::PushGeneratedSrcStr(StringRef str, SourceLocation loc) {
   // We make use of a cache of lexers to reduce malloc traffic,
   // just like with the TokenLexers used to expand macros.
   // We would otherwise have to do a new allocation for each
-  // __inject("...") statement, which would be
+  // __inj("...") statement, which would be
   // a significant burden I have to imagine.
   if (NumCachedInjectedStrLexers == 0) {
     CurLexer = std::make_unique<Lexer>(loc, getLangOpts(),

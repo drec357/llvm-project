@@ -594,11 +594,11 @@ public:
 
     /// This will be nonnull and nonempty after evaluating a \c MetaprogramDecl that
     /// contains \c StringInjectionStmt s.
-    SmallVectorImpl<const StringLiteral *> *MetaCodeChunks;
+    SmallVectorImpl<const StringLiteral *> *StringInjectionChunks;
 
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr),
-          MetaCodeChunks(nullptr) {}
+          StringInjectionChunks(nullptr) {}
 
     // hasSideEffects - Return true if the evaluated expression has
     // side effects.

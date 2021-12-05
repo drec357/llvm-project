@@ -513,24 +513,34 @@ public:
   }
 };
 
-/// Represents an __inject statement (enabled via LangOpts.StringInjection).
+/// Represents an __inj or __injf statement
+/// (enabled via LangOpts.StringInjection).
 ///
 /// When evaluated, queues the new source code to be
 /// lexed and processed at the end of the enclosing
 /// MetaprogramDecl (or the MetaprogramDecl enclosing the
 /// CallExpr calling some consteval function which
-/// contains the __inject statement).
+/// contains the __inj/__injf statement).
+///
+/// String literal and integer literal arguments are
+/// both acceptable for all but the first arg of
+/// __injf, which must be a string literal.
 ///
 /// Example:
 /// \code
-///   consteval f() { __inject("int bar = 4;"); }
+///   consteval f() {
+//      __inj("int bar = 4;");
+//      __injf("int {} = {};", "baz", 42);
+//    }
 ///   consteval { // (MetaprogramDecl)
-///     __inject("int", "foo =", 3, ";");
-///     //assert(foo==3); //ERROR
+///     const char *name = "foo";
+///     __inj("int {} = {};", name, "34");
+///     //assert(foo==34); //ERROR
 ///     f();
-///   } // queued injections performed here...
-///   assert(foo==3);
+///   } // queued injections performed here when non-dependent...
+///   assert(foo==34);
 ///   assert(bar==4);
+///   assert(baz==42);
 /// \endcode
 class StringInjectionStmt final :
     public StmtWithKWAndArbitraryParenExprArgs<StringInjectionStmt> {
@@ -539,27 +549,56 @@ class StringInjectionStmt final :
   template<typename, typename>
   friend class HasKWAndArbitraryParenExprArgs;
 
+  /// Only nonnull if isSpelledWithF.  If so, this is the original 
+  /// first argument, which we will have subdivided, removing the
+  /// placeholders, into Args.
+  StringLiteral *WrittenFirstArg;
+
   StringInjectionStmt(SourceLocation KeywordLoc, SourceLocation LParenLoc,
-                        ArrayRef<Expr *> Args, SourceLocation RParenLoc)
+                      ArrayRef<Expr *> Args, SourceLocation RParenLoc,
+                      StringLiteral *WrittenFirstArg)
     : ImplBase(KeywordLoc, LParenLoc, Args, RParenLoc,
-                 StringInjectionStmtClass) {}
+               StringInjectionStmtClass), WrittenFirstArg(WrittenFirstArg) {}
 
   StringInjectionStmt(EmptyShell Empty, unsigned NumArgs)
     : ImplBase(NumArgs, StringInjectionStmtClass, Empty) {}
 
 public:
   static StringInjectionStmt *Create(ASTContext &C,
-                                       SourceLocation KeywordLoc,
-                                       SourceLocation LParenLoc,
-                                       ArrayRef<Expr *> Args,
-                                       SourceLocation RParenLoc) {
-    return ImplBase::Create(C, KeywordLoc, LParenLoc, Args, RParenLoc);
+                                     SourceLocation KeywordLoc,
+                                     SourceLocation LParenLoc,
+                                     ArrayRef<Expr *> Args,
+                                     SourceLocation RParenLoc,
+                                     StringLiteral *WrittenFirstArg) {
+    return ImplBase::Create(C, KeywordLoc, LParenLoc,
+                            Args, RParenLoc,
+                            WrittenFirstArg);
   }
 
   static StringInjectionStmt *CreateEmpty(const ASTContext &C,
-                                            unsigned NumArgs) {
+                                          unsigned NumArgs) {
     return ImplBase::CreateEmpty(C, NumArgs);
   }
+
+  /// If true, the keyword used was __injf; if false, __inj.
+  /// If false, Args represents the original written arguments.
+  /// If true, getWrittenFirstArg() represents the written first
+  /// arg, and Args alternates between sub-strings
+  /// of WrittenFirstArg, divided at the placeholders,
+  /// and the original remaining args in order.
+  bool isSpelledWithF() const { return WrittenFirstArg; }
+
+  /// Returns null if the keyword used was __inj; otherwise
+  /// returns the string literal first argument of the __injf
+  /// statement.
+  StringLiteral *getWrittenFirstArg() const {
+    return WrittenFirstArg;
+  }
+  void setWrittenFirstArg(StringLiteral *v) { WrittenFirstArg = v; }
+
+  // Returns the string that will be interpreted as a placeholder
+  // for __injf statements.
+  static StringRef PlaceholderStr() { return StringRef("{}", 2); };
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == StringInjectionStmtClass;

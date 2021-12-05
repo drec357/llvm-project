@@ -2789,7 +2789,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   };
 
   // Regardless of whether the Pattern->isPatternWithMetaprogram(),
-  // and whether that metaprogram contains __inject statements,
+  // and whether that metaprogram contains __inj statements,
   // we will set the PII (the ParsingIntoInstantiation state)
   // and restore it upon exiting. (If IsPatternWithMetapgoram,
   // we'll set it to PII_class; if not, PII_false.)
@@ -2853,7 +2853,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   } else {
     // This template does not require any additional parsing; i.e. it is
-    // a normal template without any __inject(...) statements.
+    // a normal template without any __inj(...) statements.
     // Temporarily set PII to PII_false, in case this "normal" template
     // instantiation is occuring while parsing into an outer instantiation, s.t.
     // it is not already PII_false.

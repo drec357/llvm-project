@@ -471,20 +471,20 @@ namespace clang {
   /// that parsing will not accidentally eat into the content beyond the wall,
   /// even in the event of errors.
   ///
-  /// This is used to process __inject statements encountered in metaprograms;
+  /// This is used to process __inj statements encountered in metaprograms;
   /// e.g.:
   /// \code
   ///   template<int I>
   ///   class MyClass {
   ///     int varA;
   ///     consteval {
-  ///       __inject( "int whoops = ", I, "[;" ); (
+  ///       __inj( "int whoops = ", I, "[;" ); (
   ///     }
   ///   };
   ///
   ///   MyClass<3> /*to instantiate, we have to parse foo above.  Before doing
   ///                so we create a brick wall.  This helps us detect the
-  ///                unterminated '[' in the __inject and recover without
+  ///                unterminated '[' in the __inj and recover without
   ///                eating into\ the m below. */
   ///              m;
   ///
@@ -494,7 +494,7 @@ namespace clang {
   /// necessary when we encounter nested metaprograms:
   /// \code
   /// consteval {
-  ///   __inject("consteval { __inject(\"int i = 3;\"); }");
+  ///   __inj("consteval { __inj(\"int i = 3;\"); }");
   /// }
   /// \endcode
   ///
@@ -591,7 +591,7 @@ namespace clang {
   ///   struct Tmpl {
   ///     T varA;
   ///     consteval {
-  ///       __inject("int varB");
+  ///       __inj("int varB");
   ///     }
   ///     char varD;
   ///   };

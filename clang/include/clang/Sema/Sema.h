@@ -9617,7 +9617,7 @@ public:
 
   /// ParsingIntoInstantiation - when you are parsing declarations or
   /// statements *into* a template instantiation
-  /// (due to metaprogram decls with __inject statements in the template),
+  /// (due to metaprogram decls with __inj statements in the template),
   /// this is set to either PII_class or PII_func, depending on the kind of
   /// template.
   /// This is used when we need to instruct Sema to keep track of things needed
@@ -9631,16 +9631,16 @@ public:
     ///   template<int N>
     ///   class Foo {
     ///     consteval {
-    ///       __inject("class Bar { "
+    ///       __inj("class Bar { "
     ///                "  consteval {"
-    ///                "    __inject(\"int bar = \", N, \";\");"
+    ///                "    __inj(\"int bar = \", N, \";\");"
     ///                "  }"
     ///                "};");
     ///     }
     ///   };
     ///   int main() {
-    ///     Foo<3> f; //PII = PII_class during the outer __inject processing,
-    ///               //but = PII_false during the inner __inject.
+    ///     Foo<3> f; //PII = PII_class during the outer __inj processing,
+    ///               //but = PII_false during the inner __inj.
     ///   }
     /// \endcode
     PII_false = 0,
@@ -9648,10 +9648,10 @@ public:
     /// instantiation,
     ///   template<int N>
     ///   class Foo {
-    ///     consteval { __inject("int bar = ", N, ";"); }
+    ///     consteval { __inj("int bar = ", N, ";"); }
     ///   }
     ///   int main() {
-    ///     Foo<3> f; //PII = PII_class during the __inject processing
+    ///     Foo<3> f; //PII = PII_class during the __inj processing
     ///   }
     /// \endcode
     PII_class,
@@ -9660,10 +9660,10 @@ public:
     /// \code
     ///   template<int N>
     ///   void f() {
-    ///     consteval { __inject("int foo = ", N, ";"); }
+    ///     consteval { __inj("int foo = ", N, ";"); }
     ///   }
     ///   int main() {
-    ///     f<3>; //PII = PII_false during the __inject processing
+    ///     f<3>; //PII = PII_false during the __inj processing
     ///   }
     /// \endcode
     PII_func
@@ -9686,13 +9686,15 @@ public:
   bool EvaluateMetaprogramDeclCall(MetaprogramDecl *MD, CallExpr *Call);
 
   StmtResult ActOnStringInjectionStmt(SourceLocation KeywordLoc,
-                                        SourceLocation LParenLoc,
-                                        ArrayRef<Expr *> Args,
-                                        SourceLocation RParenLoc,
-                                        bool AnyDependent);
+                                      SourceLocation LParenLoc,
+                                      ArrayRef<Expr *> Args,
+                                      SourceLocation RParenLoc,
+                                      bool AnyDependent,
+                                      StringLiteral *WrittenFirstArg =
+                                          nullptr);
 
-  bool DoQueuedMetaparsing(SourceLocation POI,
-                           ArrayRef<const StringLiteral *> MetaCodeChunks,
+  bool InjectQueuedStrings(SourceLocation POI,
+                           ArrayRef<const StringLiteral *> StringInjectionChunks,
                            MetaprogramDecl *MD);
 
   Parser &getParser() {

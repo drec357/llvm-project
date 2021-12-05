@@ -2762,7 +2762,23 @@ DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, {})
 DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
-DEF_TRAVERSE_STMT(StringInjectionStmt, {})
+
+DEF_TRAVERSE_STMT(StringInjectionStmt, {
+  if (StringLiteral *WrittenFirstArg = S->getWrittenFirstArg()) {
+    assert(S->isSpelledWithF());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(WrittenFirstArg);
+    if (!getDerived().shouldVisitImplicitCode()) {
+      // Traverse only the odd Args (the even ones are
+      // implicitly generated sub strings of WrittenFirstArg)
+      ShouldVisitChildren = false;
+      for (unsigned I = 1; I < S->getNumArgs(); I+=2)
+        TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getArg(I));
+    }
+  }
+  // If !WrittenFirstArg (__inj), or if visiting
+  // implicit code you will visit all of getArgs() as
+  // children
+})
 
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {
   if (S->getLifetimeExtendedTemporaryDecl()) {

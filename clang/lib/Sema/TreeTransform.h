@@ -1493,14 +1493,15 @@ public:
     return getSema().BuildCoroutineBodyStmt(Args);
   }
 
-   /// Build a new __inject(...) statement.
+   /// Build a new __inj(...) statement.
   StmtResult RebuildStringInjectionStmt(SourceLocation KeywordLoc,
-                                          SourceLocation LParenLoc,
-                                          SmallVectorImpl<Expr *> &Args,
-                                          SourceLocation RParenLoc,
-                                          bool AnyDependent) {
+                                        SourceLocation LParenLoc,
+                                        SmallVectorImpl<Expr *> &Args,
+                                        SourceLocation RParenLoc,
+                                        bool AnyDependent,
+                                        StringLiteral *WrittenFirstArg) {
     return getSema().ActOnStringInjectionStmt(
-        KeywordLoc, LParenLoc, Args, RParenLoc, AnyDependent);
+        KeywordLoc, LParenLoc, Args, RParenLoc, AnyDependent, WrittenFirstArg);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -8491,7 +8492,8 @@ TransformStringInjectionStmt(StringInjectionStmt *S) {
     return S;
 
   return RebuildStringInjectionStmt(S->getKeywordLoc(), S->getLParenLoc(),
-                                      NewArgs, S->getRParenLoc(), AnyDependent);
+                                    NewArgs, S->getRParenLoc(), AnyDependent,
+                                    S->getWrittenFirstArg());
 }
 
 //===----------------------------------------------------------------------===//

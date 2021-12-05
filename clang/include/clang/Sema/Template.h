@@ -320,7 +320,7 @@ enum class TemplateSubstitutionKind : char {
     /// their decls to the LocalDecls member, but also to
     /// SemaRef.Scope and SemaRef.IdResolver.
     /// We need this for proper lookup whenever instantiating
-    /// a function with metaprograms containing __inject
+    /// a function with metaprograms containing __inj
     /// statements.
     const bool ShouldCopyToSemaScopeEtc;
 

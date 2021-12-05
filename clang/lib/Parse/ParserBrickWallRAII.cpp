@@ -47,13 +47,13 @@ ParserBrickWallRAII::JustTheParserVariables::JustTheParserVariables(Parser &P)
   P.UnconsumeToken(EmptyToken);
   assert(P.Tok.getLocation().isInvalid() &&
          "We rely on this dummy token having an invalid location as a signal "
-         "that the ParserBrickWallRAII has been created before metaparsing "
+         "that the ParserBrickWallRAII has been created before injected string parsing "
          "(see lib/Sema/SemaMetaprogram.cpp)");
 
   // Calling UnconsumeToken will have put us in CachingLexMode, such that the
   // next Lex call would fetch the old P.Tok we just cached.  We don't want
-  // to do that -- we want to preserve that token for when we are done
-  // metaparsing.  Exiting caching lex mode will do this.
+  // to do that -- we want to preserve that token for when we are done with
+  // injected string parsing.  Exiting caching lex mode will do this.
   P.PP.ExitCachingLexMode();
 
   assert(P.PP.CachedTokens.size() > 0);
@@ -185,7 +185,7 @@ void ParserBrickWallRAII::PreprocessorBrickWallRAII::clearAnyDeadLexers() {
     // Since we didn't PushIncludeMacroStack when we first set
     // CLK_TerminatorPretendLexer as the kind, we can just recompute
     // to get back to the original state.
-    // First gotta set the IsMetaParsingInjectedStrings val; we'll do that
+    // First must set the ParsingFromInjectedStrBool val; we'll do that
     // again later but we definitely need to do it now before recomputing,
     // becuase the introduction of the terminator lexer wiped out that
     // info:

@@ -397,6 +397,7 @@ void ASTStmtWriter::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
 
 void ASTStmtWriter::VisitStringInjectionStmt(StringInjectionStmt *S) {
   VisitStmt(S);
+  Record.AddStmt(S->getWrittenFirstArg());
   Record.push_back(S->getNumArgs());
   Record.AddSourceLocation(S->getKeywordLoc());
   Record.AddSourceLocation(S->getLParenLoc());

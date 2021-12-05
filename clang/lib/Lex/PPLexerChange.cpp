@@ -387,7 +387,7 @@ bool Preprocessor::HandleEndOfFile(Token &Result, SourceLocation EndLoc,
       return true;
     }
 
-    // Normal metaparsing:
+    // Normal injected string parsing:
     assert(!CurPPLexer || CurLexerKind == CLK_InjectedStrLexer
            && "It seems CurLexerKind was not set/pushed/popped "
               "properly for this InjectedStrLexer");
@@ -397,7 +397,7 @@ bool Preprocessor::HandleEndOfFile(Token &Result, SourceLocation EndLoc,
     if (NumCachedInjectedStrLexers == InjectedStrLexerCacheSize) {
       CurLexer.reset();
     } else if (CurLexer) {
-        // ^ Hack-ish: with nested __inject calls, CurLexer
+        // ^ Hack-ish: with nested __inj calls, CurLexer
         // has sometimes already been nullified when getting here,
         // hence the `if (CurLexer)` test.
       InjectedStrLexerCache[NumCachedInjectedStrLexers++] = std::move(CurLexer);

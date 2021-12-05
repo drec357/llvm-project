@@ -1582,4 +1582,9 @@ def warn_max_tokens_total : Warning<
 
 def note_max_tokens_total_override : Note<"total token limit set here">;
 
+def err___injf_first_arg_not_str : Error<
+  "the first argument to __injf(...) must be a non-dependent string literal">;
+def err___injf_wrong_num_args : Error<
+  "Mismatch between placeholder count (%0) and additional arguments (%1)">;
+
 } // end of Parser diagnostics

@@ -107,19 +107,33 @@ bool Parser::ParseArbitraryParensConstexprExprArgs(SourceLocation &LParenLoc,
   return false;
 }
 
-/// \brief Parse an __inject(...) statement.
+// Creates a c-string of type const char[N].
+static StringLiteral *
+MakeString(ASTContext &Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(
+      Ctx.CharTy.withConst(), llvm::APInt(32, Str.size() + 1), nullptr,
+      ArrayType::Normal, 0);
+
+  // Create a string literal of type const char [L] where L
+  // is the number of characters in the StringRef.
+  return StringLiteral::Create(
+      Ctx, Str, StringLiteral::Ascii, false, StrLitTy, Loc);
+}
+
+/// \brief Parse an __inj(...) or __injf(...) statement.
 ///
 ///   string-injection-statement:
-///     '__inject' '(' constant-argument-list ')' ';'
+///     '__inj'  '(' constant-argument-list ')' ';'
+///     '__injf' '(' string-literal, constant-argument-list ')' ';'
 ///
-/// Each argument must be a string literal or integer constant expression.
-/// They will be meta-parsed *with whitespace in between* each argument.
-/// If concatenation is needed with no whitespace, use __concatenate(...)
-/// for the appropriate argument.
+/// Each argument must be a string literal or integer constant expression,
+/// except the first argument of __injf which can only be a string literal.
+/// When in a non-dependent metaprogram, the strings will be parsed *with
+/// whitespace in between* each argument.
 ///
 /// Note that the statement parser will collect the trailing semicolon.
 ///
-StmtResult Parser::ParseStringInjectionStmt() {
+StmtResult Parser::ParseStringInjectionStmt(bool IsSpelledWithF) {
   SourceLocation KeywordLoc = ConsumeToken();
   SourceLocation LParenLoc, RParenLoc;
   SmallVector<Expr *, 4> Args;
@@ -129,6 +143,77 @@ StmtResult Parser::ParseStringInjectionStmt() {
                                             RParenLoc, AnyDependent))
     return StmtError();
 
+  if (!IsSpelledWithF)
+    return Actions.ActOnStringInjectionStmt(KeywordLoc, LParenLoc,
+                                          Args, RParenLoc, AnyDependent);
+
+  // We have just parsed an __injf(...) statement, e.g.
+  //   __injf("int {} = {};", "foo", 42);
+  // We want to interpret that as these sequential arguments, i.e. as if
+  // it had been written
+  //   __inj("int ", "foo", " = ", 42, ";")
+
+  // Make sure the first arg is a non-dependent string literal.
+  StringLiteral *WrittenFirstArg = dyn_cast<StringLiteral>(Args[0]);
+  if (!WrittenFirstArg) {
+    Diag(LParenLoc.getLocWithOffset(1),
+         diag::err___injf_first_arg_not_str);
+    return StmtError();
+  }
+
+  SmallVector<Expr *, 8> ReorderedArgs;
+  static const StringRef PlaceholderStr =
+      StringInjectionStmt::PlaceholderStr();
+  static const size_t PlaceholderSize = PlaceholderStr.size();
+  StringRef FirstArgStr = WrittenFirstArg->getString();
+  SourceLocation FirstArgLoc = WrittenFirstArg->getBeginLoc();
+  const unsigned NumArgs = Args.size();
+
+  unsigned SubstArgIdx = 0;
+  StringRef FirstArgSubStr;
+  SourceLocation FirstArgSubLoc;
+  size_t CurBegin = 0, CurEnd = FirstArgStr.find(PlaceholderStr, 0);
+
+  while (CurEnd != StringRef::npos) {
+    // Make sure we don't have more placeholders than remaining args
+    if (SubstArgIdx + 1 >= NumArgs) {
+      Diag(RParenLoc, diag::err___injf_wrong_num_args)
+          << "at least " + std::to_string(SubstArgIdx + 1)
+          << std::to_string(NumArgs-1);
+      return StmtError();
+    }
+    // Create a string literal from a substring of the first argument's
+    // string literal, and push it onto ReorderedArgs.
+    FirstArgSubStr = FirstArgStr.substr(CurBegin, CurEnd-CurBegin);
+    FirstArgSubLoc = FirstArgLoc.getLocWithOffset(CurBegin);
+    StringLiteral *FirstArgSubStrLit =
+        MakeString(Actions.getASTContext(), FirstArgSubStr, FirstArgSubLoc);
+    ReorderedArgs.push_back(FirstArgSubStrLit);
+
+    // Push the next of the remaining args onto ReorderedArgs; in this way
+    // it serves as the substitute for the placeholder.
+    ReorderedArgs.push_back(Args[++SubstArgIdx]);
+
+    // Iterate
+    CurBegin = CurEnd + PlaceholderSize;
+    CurEnd = FirstArgStr.find(PlaceholderStr, CurBegin);
+  }
+  // Make sure we don't have fewer placeholders than remaining args
+  if (SubstArgIdx + 1 < Args.size()) {
+    Diag(Args[SubstArgIdx]->getExprLoc(), diag::err___injf_wrong_num_args)
+        << std::to_string(SubstArgIdx + 1)
+        << std::to_string(NumArgs-1);
+    return StmtError();
+  }
+
+  // Add the final substring
+  FirstArgSubStr = FirstArgStr.substr(CurBegin, FirstArgStr.size()-CurBegin);
+  FirstArgSubLoc = FirstArgLoc.getLocWithOffset(CurBegin);
+  StringLiteral *FirstArgSubStrLit =
+      MakeString(Actions.getASTContext(), FirstArgSubStr, FirstArgSubLoc);
+  ReorderedArgs.push_back(FirstArgSubStrLit);
+
   return Actions.ActOnStringInjectionStmt(KeywordLoc, LParenLoc,
-                                            Args, RParenLoc, AnyDependent);
+                                          ReorderedArgs, RParenLoc,
+                                          AnyDependent, WrittenFirstArg);
 }

@@ -2181,6 +2181,11 @@ defm pch_codegen: OptInCC1FFlag<"pch-codegen", "Generate ", "Do not generate ",
 defm pch_debuginfo: OptInCC1FFlag<"pch-debuginfo", "Generate ", "Do not generate ",
   "debug info for types in an object file built from this PCH and do not generate them elsewhere">;
 
+defm string_injection : BoolFOption<"string-injection",
+  LangOpts<"StringInjection">, DefaultFalse,
+  PosFlag<SetTrue, [CC1Option], "Enable consteval code generation via string injection">,
+  NegFlag<SetFalse>>;
+
 def fimplicit_module_maps : Flag <["-"], "fimplicit-module-maps">, Group<f_Group>,
   Flags<[NoXarchOption, CC1Option, CoreOption]>,
   HelpText<"Implicitly search the file system for module map files.">,
@@ -2188,12 +2193,6 @@ def fimplicit_module_maps : Flag <["-"], "fimplicit-module-maps">, Group<f_Group
 def fmodules_ts : Flag <["-"], "fmodules-ts">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Enable support for the C++ Modules TS">,
   MarshallingInfoFlag<LangOpts<"ModulesTS">>;
-
-defm string_injection : BoolFOption<"string-injection",
-  LangOpts<"StringInjection">, DefaultFalse,
-  PosFlag<SetTrue, [CC1Option], "Enable consteval code generation via string injection">,
-  NegFlag<SetFalse>>;
-
 defm modules : BoolFOption<"modules",
   LangOpts<"Modules">, Default<!strconcat(fmodules_ts.KeyPath, "||", fcxx_modules.KeyPath)>,
   PosFlag<SetTrue, [CC1Option], "Enable the 'modules' language feature">,
