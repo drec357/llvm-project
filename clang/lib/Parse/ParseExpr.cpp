@@ -1473,6 +1473,10 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseSYCLUniqueStableNameExpression();
     break;
 
+  case tok::kw___select_member:
+    Res = ParseCXXSelectMemberExpr();
+    break;
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       TypeResult Type = getTypeAnnotation(Tok);

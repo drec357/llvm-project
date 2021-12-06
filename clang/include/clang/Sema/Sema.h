@@ -4816,6 +4816,27 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
+  StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
+                                   SourceLocation AnnotationLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *RangeVar,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Stmt *RangeVar,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
+  /// Build a CXXExpansionStmt over a pack.
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
+
+  StmtResult ActOnCXXExpansionStmtError(Stmt *S);
+
+  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
+
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
                            LabelDecl *TheDecl);
@@ -7327,6 +7348,22 @@ public:
   void ActOnBaseSpecifiers(Decl *ClassDecl,
                            MutableArrayRef<CXXBaseSpecifier *> Bases);
 
+  /// Find the base class to decompose in a built-in decomposition of a class
+  /// type. This base class search is, unfortunately, not quite like any other
+  /// that we perform anywhere else in C++.
+  DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
+                                           const CXXRecordDecl *RD,
+                                           CXXCastPath &BasePath);
+  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
+                                      VarDecl *Base, Expr *Index,
+                                      SourceLocation KWLoc = SourceLocation(),
+                                      SourceLocation BaseLoc = SourceLocation(),
+                                      SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
+                                    SourceLocation KWLoc = SourceLocation(),
+                                    SourceLocation BaseLoc = SourceLocation(),
+                                    SourceLocation IdxLoc = SourceLocation());
+
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,
                      CXXBasePaths &Paths);
@@ -8758,6 +8795,9 @@ public:
       /// template which was deferred until it was needed.
       ExceptionSpecInstantiation,
 
+      /// We are instantiating the body of a range-based loop over a tuple.
+      ForLoopInstantiation,
+
       /// We are instantiating a requirement of a requires expression.
       RequirementInstantiation,
 
@@ -8821,6 +8861,13 @@ public:
     /// performing the instantiation, for substitutions of prior template
     /// arguments.
     NamedDecl *Template;
+
+    /// The dependent for loop body in which we are performing
+    /// substitutions.
+    ///
+    // TODO: Make this a union with Entity since we are instantiating either
+    // a declaration or a statement, never both.
+    Stmt *Loop;
 
     /// The list of template arguments we are substituting, if they
     /// are not part of the entity.
@@ -9104,6 +9151,12 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           concepts::NestedRequirement *Req, ConstraintsCheck,
                           SourceRange InstantiationRange = SourceRange());
+
+    /// \brief Note that we are substituting into the body of a template-for
+    /// statement.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
+                          SourceRange InstantiationRange);
 
     /// Note that we have finished instantiating this template.
     void Clear();
@@ -12949,6 +13002,28 @@ private:
   /// directives, like -Wpragma-pack.
   sema::SemaPPCallbacks *SemaPPCallbackHandler;
 
+public:
+  /// Tracks the nesting level of loop expansions. A loop expansion is
+  /// is initially dependent when parsed an instantiated. It is non-dependent
+  /// after that.
+  ///
+  /// This affects ODR usage. In particular, expressions in the body of
+  /// these statements aren't really expressions until they're instantiated.
+  struct LoopExpansionContext
+  {
+    LoopExpansionContext(FunctionDecl *F)
+      : Fn(F)
+    { }
+
+    FunctionDecl *Fn;
+    SmallVector<Stmt *, 4> Loops;
+  };
+
+  /// Maintains a stack of expansion contexts.
+  SmallVector<LoopExpansionContext, 4> LoopExpansionStack;
+
+  void PushLoopExpansion(Stmt *S);
+  void PopLoopExpansion();
 protected:
   friend class Parser;
   friend class InitializationSequence;

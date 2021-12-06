@@ -361,6 +361,12 @@ ExprDependence clang::computeDependence(DependentCoawaitExpr *E) {
          ExprDependence::TypeValueInstantiation;
 }
 
+ExprDependence clang::computeDependence(CXXSelectionExpr *E) {
+  auto D = E->getBase()->getDependence() | E->getSelector()->getDependence();
+  D &= ~ExprDependence::UnexpandedPack;
+  return D;
+}
+
 ExprDependence clang::computeDependence(ObjCBoxedExpr *E) {
   return E->getSubExpr()->getDependence();
 }

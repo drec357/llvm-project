@@ -1005,6 +1005,19 @@ void ASTStmtReader::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   }
 }
 
+void ASTStmtReader::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
+}
+
+void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitExpr(E);
+}
+
+void ASTStmtReader::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  VisitExpr(E);
+}
+
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   unsigned NumArgs = Record.readInt();
@@ -1673,6 +1686,17 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setInc(Record.readSubExpr());
   S->setLoopVarStmt(Record.readSubStmt());
   S->setBody(Record.readSubStmt());
+}
+
+void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXCompositeExpansionStmt(
+                                                 CXXCompositeExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
 }
 
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
@@ -3189,6 +3213,14 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_CXX_FOR_RANGE:
       S = new (Context) CXXForRangeStmt(Empty);
+      break;
+
+    case STMT_CXX_PACK_EXPANSION:
+      S = new (Context) CXXPackExpansionStmt(Empty);
+      break;
+
+    case STMT_CXX_COMP_EXPANSION:
+      S = new (Context) CXXCompositeExpansionStmt(Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

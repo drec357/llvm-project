@@ -5985,9 +5985,12 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
                           bool FindingInstantiatedContext) {
   DeclContext *ParentDC = D->getDeclContext();
   // Determine whether our parent context depends on any of the template
-  // arguments we're currently substituting.
+  // arguments we're currently substituting.  Expansion statements may live
+  // in non-dependent function bodies, and so require special handling.
   bool ParentDependsOnArgs = isDependentContextAtLevel(
-      ParentDC, TemplateArgs.getNumRetainedOuterLevels());
+      ParentDC, TemplateArgs.getNumRetainedOuterLevels()) ||
+      (CurrentInstantiationScope &&
+       CurrentInstantiationScope->InstantiatingExpansionStmt);
   // FIXME: Parameters of pointer to functions (y below) that are themselves
   // parameters (p below) can have their ParentDC set to the translation-unit
   // - thus we can not consistently check if the ParentDC of such a parameter
@@ -6065,15 +6068,24 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
       return cast<TypeDecl>(Inst);
     }
 
-    // If we didn't find the decl, then we must have a label decl that hasn't
-    // been found yet.  Lazily instantiate it and return it now.
-    assert(isa<LabelDecl>(D));
+    // If we didn't find the decl, then our scope must either be allowing
+    // uninstantiated resolutions, or we have a label decl that hasn't
+    // been found yet. If we have a label decl, prefer lazy instantiation
+    // of the label over falling back to the uninstantiated decl.
+    if (isa<LabelDecl>(D)) {
+      // Lazily instantiate and return the label now.
+      Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
+      assert(Inst && "Failed to instantiate label??");
 
-    Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
-    assert(Inst && "Failed to instantiate label??");
+      CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+      return cast<LabelDecl>(Inst);
+    }
 
-    CurrentInstantiationScope->InstantiatedLocal(D, Inst);
-    return cast<LabelDecl>(Inst);
+    // Fall back to the uninstantiated decl.
+    assert(CurrentInstantiationScope);
+    assert(CurrentInstantiationScope->InstantiatingExpansionStmt);
+
+    return D;
   }
 
   if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(D)) {

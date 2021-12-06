@@ -860,6 +860,19 @@ void ASTStmtWriter::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   Code = serialization::EXPR_OMP_ITERATOR;
 }
 
+void ASTStmtWriter::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
+}
+
+void ASTStmtWriter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitExpr(E);
+}
+
+void ASTStmtWriter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  VisitExpr(E);
+}
+
 void ASTStmtWriter::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   Record.push_back(E->getNumArgs());
@@ -1556,6 +1569,19 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Record.AddStmt(S->getLoopVarStmt());
   Record.AddStmt(S->getBody());
   Code = serialization::STMT_CXX_FOR_RANGE;
+}
+
+void ASTStmtWriter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_PACK_EXPANSION;
+}
+
+void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
+                                                 CXXCompositeExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_COMP_EXPANSION;
 }
 
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {

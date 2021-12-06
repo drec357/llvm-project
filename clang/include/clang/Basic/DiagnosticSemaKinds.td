@@ -2783,6 +2783,14 @@ def warn_private_extern : Warning<
 def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
+// tuple and pack loops
+def note_loop_body_instantiation_here : Note<
+  "in instantiation of loop body expansion">;
+def err_select_index_not_constant : Error<
+  "Index of a __select expression must be a constant expression.">;
+def err_select_index_exceeds_bounds : Error<
+  "A member may not be selected at an out-of-bounds index.">;
+
 // C++ Concepts
 def err_concept_decls_may_only_appear_in_global_namespace_scope : Error<
   "concept declarations may only appear in global or namespace scope">;

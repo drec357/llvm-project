@@ -2056,6 +2056,10 @@ private:
   StmtResult
   ParseStatement(SourceLocation *TrailingElseLoc = nullptr,
                  ParsedStmtContext StmtCtx = ParsedStmtContext::SubStmt);
+  StmtResult
+  StmtOrDeclAfterAttributesDefault(ParsedStmtContext StmtCtx,
+                                   ParsedAttributesWithRange &Attrs,
+                                   SourceLocation &GNUAttributeLoc);
   StmtResult ParseStatementOrDeclaration(
       StmtVector &Stmts, ParsedStmtContext StmtCtx,
       SourceLocation *TrailingElseLoc = nullptr);
@@ -3168,6 +3172,12 @@ private:
   bool ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
                                   ParsedType ObjectType,
                                   UnqualifiedId &Result);
+
+  //===--------------------------------------------------------------------===//
+  // Metaprogramming
+
+  /// Parse a __select_member expression
+  ExprResult ParseCXXSelectMemberExpr();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

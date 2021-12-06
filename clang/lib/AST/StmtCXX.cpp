@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/StmtCXX.h"
 
 #include "clang/AST/ASTContext.h"
@@ -81,6 +82,32 @@ VarDecl *CXXForRangeStmt::getLoopVariable() {
 
 const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
+}
+
+VarDecl *CXXCompositeExpansionStmt::getRangeVariable() {
+  Decl *RV = cast<DeclStmt>(getRangeVarStmt())->getSingleDecl();
+  assert(RV && "No range variable in CXXExpansionStmt");
+  return cast<VarDecl>(RV);
+}
+
+Expr *CXXPackExpansionStmt::getRangeExpr() const {
+  assert(isa<Expr>(getRangeExprStmt()) && "Range is not an expression.");
+  Expr *RangeExpr = cast<Expr>(getRangeExprStmt());
+  return RangeExpr;
+}
+
+VarDecl *CXXExpansionStmt::getLoopVariable() {
+  Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
+  assert(LV && "No loop variable in CXXExpansionStmt");
+  return cast<VarDecl>(LV);
+}
+
+const VarDecl *CXXExpansionStmt::getLoopVariable() const {
+  return const_cast<CXXExpansionStmt *>(this)->getLoopVariable();
+}
+
+NonTypeTemplateParmDecl *CXXExpansionStmt::getInductionVariable() {
+  return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
 }
 
 CoroutineBodyStmt *CoroutineBodyStmt::Create(

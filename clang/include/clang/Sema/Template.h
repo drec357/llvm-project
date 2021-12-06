@@ -316,6 +316,12 @@ enum class TemplateSubstitutionKind : char {
     /// lookup will search our outer scope.
     bool CombineWithOuterScope;
 
+  public:
+    /// Whether this scope is being used to instantiate an
+    /// expansion statement (template-for)
+    const bool InstantiatingExpansionStmt;
+
+  private:
     /// If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack = nullptr;
@@ -330,9 +336,11 @@ enum class TemplateSubstitutionKind : char {
     unsigned NumArgsInPartiallySubstitutedPack;
 
   public:
-    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
+    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false,
+                            bool InstantiatingExpansionStmt = false)
         : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
-          CombineWithOuterScope(CombineWithOuterScope) {
+          CombineWithOuterScope(CombineWithOuterScope),
+          InstantiatingExpansionStmt(InstantiatingExpansionStmt) {
       SemaRef.CurrentInstantiationScope = this;
     }
 

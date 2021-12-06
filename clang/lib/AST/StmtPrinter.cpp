@@ -373,6 +373,35 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   PrintControlledStmt(Node->getBody());
 }
 
+void StmtPrinter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *Node) {
+  Indent() << "template for (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeInit());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
+void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
+  Indent() << "template for (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeExpr());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())
@@ -1399,6 +1428,22 @@ void StmtPrinter::VisitOMPIteratorExpr(OMPIteratorExpr *Node) {
     if (I < E - 1)
       OS << ", ";
   }
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  OS << "__select_member(";
+  PrintExpr(E->getBase());
+  OS << ", ";
+  PrintExpr(E->getSelector());
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  OS << "__select_member(";
+  PrintExpr(E->getBase());
+  OS << ", ";
+  PrintExpr(E->getSelector());
   OS << ")";
 }
 

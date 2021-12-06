@@ -656,6 +656,11 @@ public:
   /// Returns the clang bytecode interpreter context.
   interp::Context &getInterpContext();
 
+  /// Active destructures of structures or parameter packs, used by
+  /// expansion statements. Maps a record decl to its destructured fields.
+  using MemberVector = llvm::SmallVector<Expr *, 8>;
+  llvm::DenseMap<const Expr *, MemberVector *> Destructures;
+
   /// Returns the dynamic AST node parent map context.
   ParentMapContext &getParentMapContext();
 
