@@ -326,6 +326,10 @@ enum class TemplateSubstitutionKind : char {
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack = nullptr;
 
+    /// Whether this scope is being used to instantiate an
+    /// expansion statement (template-for)
+    const bool InstantiatingExpansionStmt;
+
     /// If \c PartiallySubstitutedPack is non-null, the set of
     /// explicitly-specified template arguments in that pack.
     const TemplateArgument *ArgsInPartiallySubstitutedPack;
@@ -364,6 +368,12 @@ enum class TemplateSubstitutionKind : char {
 
       SemaRef.CurrentInstantiationScope = Outer;
       Exited = true;
+    }
+
+    /// Whether this scope is being used to instantiate an
+    /// expansion statement (template-for)
+    bool isInstantiatingExpansionStmt() const {
+      return InstantiatingExpansionStmt;
     }
 
     /// Clone this scope, and all outer scopes, down to the given
