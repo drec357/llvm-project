@@ -1,8 +1,10 @@
-#if __has_extension(string_injection)
-  //...
-#else
-  Must pass -fstring-injection to compiler
-#endif
+// RUN: %clang_cc1 -std=c++1z -fstring-injection -verify %s
+// expected-no-diagnostics
+
+#define assert(E) if (!(E)) __builtin_abort();
+
+static_assert(__has_extension(string_injection),
+    "Must pass -fstring-injection to compiler");
 
 static constexpr const char *five = "5";
 static const char *fiveB = "5";
@@ -14,7 +16,7 @@ consteval {
   __injf("");
   __inj("static const int h = 2;");
   __inj("static const int i = h + ", 1, ";");
-  __injf("constexpr int {} = {} + {} + {};", "j", 4, five, "i");
+  __injf("{} int {} = {} + {} + {};", "constexpr", "j", 4, five, "i");
   __inj("//does nothing");
 
   __injf("//single arg to injf okay");
@@ -27,6 +29,7 @@ consteval {
 
   // If not terminated via subsequent __inj/__injf statements in this same
   // consteval {}, the following should produce errors:
+
 //  __inj("void f("); //ERROR (FIXME: diagnostics suck)
 //  __inj("template<int I>>"); //ERROR
 //  __inj("template<int i, template<typename, "); //ERROR (FIXME: diagnostics suck)
@@ -34,14 +37,11 @@ consteval {
 //  __inj("\""); //ERROR
 //  __inj("/*"); //ERROR
 
-  // So long as each injected entity is terminated by the
-  // end of this consteval {} you're okay:
   __inj("void foo(");
-  __injf("int {}, int {}", "parm1", "parm2");
+  __inj("int parm1, int parm2");
   __inj("){");
   __inj("}");
 }
-
 static_assert(h==2);
 static_assert(i==3);
 static_assert(j==12);
