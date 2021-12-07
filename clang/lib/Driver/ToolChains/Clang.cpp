@@ -6350,7 +6350,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // `template for` is disabled by default
   if (Args.hasFlag(options::OPT_ftemplate_for,
                    options::OPT_fno_template_for,
-                   false && types::isCXX(InputType)))
+                   false))
     CmdArgs.push_back("-ftemplate-for");
 
   // -fgnu-keywords default varies depending on language; only pass if

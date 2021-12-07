@@ -2232,7 +2232,7 @@ def fretain_comments_from_system_headers : Flag<["-"], "fretain-comments-from-sy
   MarshallingInfoFlag<LangOpts<"RetainCommentsFromSystemHeaders">>;
 
 defm template_for : BoolFOption<"template-for",
-  LangOpts<"StringInjection">, DefaultFalse,
+  LangOpts<"TemplateFor">, DefaultFalse,
   PosFlag<SetTrue, [CC1Option], "Enable template for loops">,
   NegFlag<SetFalse>>;
 

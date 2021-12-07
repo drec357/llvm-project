@@ -1,6 +1,8 @@
 // RUN: %clang_cc1 -std=c++1z -ftemplate-for %s
 // expected-no-diagnostics
 
+static_assert(__has_extension(template_for), "");
+
 #define assert(E) if (!(E)) __builtin_abort();
 
 struct record {

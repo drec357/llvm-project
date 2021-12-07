@@ -1,7 +1,6 @@
 
-#if !__has_extension(template_for)
-  Must pass "-ftemplate-for" to compiler
-#endif
+static_assert(__has_extension(template_for),
+              "Must pass -ftemplate-for to compiler");
 
 /// Tuple stuff
 

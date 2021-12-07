@@ -3,6 +3,8 @@
 
 /// Tuple stuff
 
+static_assert(__has_extension(template_for), "");
+
 struct tuple
 {
   int n = 10;
