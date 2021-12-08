@@ -1631,7 +1631,7 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsByTypeMatch(
     case Type::ObjCObject:
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
-    case Type::ExtInt:
+    case Type::BitInt:
       return (TDF & TDF_SkipNonDependent) ||
                      ((TDF & TDF_IgnoreQualifiers)
                           ? S.Context.hasSameUnqualifiedType(P, A)
@@ -2178,10 +2178,10 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsByTypeMatch(
 
       return Sema::TDK_NonDeducedMismatch;
     }
-    case Type::DependentExtInt: {
-      const auto *IP = P->castAs<DependentExtIntType>();
+    case Type::DependentBitInt: {
+      const auto *IP = P->castAs<DependentBitIntType>();
 
-      if (const auto *IA = A->getAs<ExtIntType>()) {
+      if (const auto *IA = A->getAs<BitIntType>()) {
         if (IP->isUnsigned() != IA->isUnsigned())
           return Sema::TDK_NonDeducedMismatch;
 
@@ -2198,7 +2198,7 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsByTypeMatch(
                                              Deduced);
       }
 
-      if (const auto *IA = A->getAs<DependentExtIntType>()) {
+      if (const auto *IA = A->getAs<DependentBitIntType>()) {
         if (IP->isUnsigned() != IA->isUnsigned())
           return Sema::TDK_NonDeducedMismatch;
         return Sema::TDK_Success;
@@ -6014,9 +6014,9 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                cast<DeducedType>(T)->getDeducedType(),
                                OnlyDeduced, Depth, Used);
     break;
-  case Type::DependentExtInt:
+  case Type::DependentBitInt:
     MarkUsedTemplateParameters(Ctx,
-                               cast<DependentExtIntType>(T)->getNumBitsExpr(),
+                               cast<DependentBitIntType>(T)->getNumBitsExpr(),
                                OnlyDeduced, Depth, Used);
     break;
 
@@ -6031,7 +6031,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::ObjCObjectPointer:
   case Type::UnresolvedUsing:
   case Type::Pipe:
-  case Type::ExtInt:
+  case Type::BitInt:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)

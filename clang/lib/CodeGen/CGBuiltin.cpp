@@ -687,7 +687,7 @@ getIntegerWidthAndSignedness(const clang::ASTContext &context,
                              const clang::QualType Type) {
   assert(Type->isIntegerType() && "Given type is not an integer.");
   unsigned Width = Type->isBooleanType()  ? 1
-                   : Type->isExtIntType() ? context.getIntWidth(Type)
+                   : Type->isBitIntType() ? context.getIntWidth(Type)
                                           : context.getTypeInfo(Type).Width;
   bool Signed = Type->isSignedIntegerType();
   return {Width, Signed};
@@ -3133,6 +3133,14 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
                                             "elt.abs");
     return RValue::get(Result);
   }
+
+  case Builtin::BI__builtin_elementwise_ceil: {
+    Value *Op0 = EmitScalarExpr(E->getArg(0));
+    Value *Result = Builder.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, Op0,
+                                                 nullptr, "elt.ceil");
+    return RValue::get(Result);
+  }
+
   case Builtin::BI__builtin_elementwise_max: {
     Value *Op0 = EmitScalarExpr(E->getArg(0));
     Value *Op1 = EmitScalarExpr(E->getArg(1));

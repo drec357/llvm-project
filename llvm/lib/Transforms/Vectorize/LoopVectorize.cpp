@@ -3030,14 +3030,12 @@ void InnerLoopVectorizer::scalarizeInstruction(Instruction *Instr,
                                Builder.GetInsertPoint());
   // Replace the operands of the cloned instructions with their scalar
   // equivalents in the new loop.
-  for (unsigned op = 0, e = RepRecipe->getNumOperands(); op != e; ++op) {
-    auto *Operand = dyn_cast<Instruction>(Instr->getOperand(op));
+  for (auto &I : enumerate(RepRecipe->operands())) {
     auto InputInstance = Instance;
-    if (!Operand || !OrigLoop->contains(Operand) ||
-        (Cost->isUniformAfterVectorization(Operand, State.VF)))
+    VPValue *Operand = I.value();
+    if (State.Plan->isUniformAfterVectorization(Operand))
       InputInstance.Lane = VPLane::getFirstLane();
-    auto *NewOp = State.get(RepRecipe->getOperand(op), InputInstance);
-    Cloned->setOperand(op, NewOp);
+    Cloned->setOperand(I.index(), State.get(Operand, InputInstance));
   }
   addNewMetadata(Cloned, Instr);
 
@@ -5368,13 +5366,9 @@ LoopVectorizationCostModel::getMaxLegalScalableVF(unsigned MaxSafeElements) {
 
   // Limit MaxScalableVF by the maximum safe dependence distance.
   Optional<unsigned> MaxVScale = TTI.getMaxVScale();
-  if (!MaxVScale && TheFunction->hasFnAttribute(Attribute::VScaleRange)) {
-    unsigned VScaleMax = TheFunction->getFnAttribute(Attribute::VScaleRange)
-                             .getVScaleRangeArgs()
-                             .second;
-    if (VScaleMax > 0)
-      MaxVScale = VScaleMax;
-  }
+  if (!MaxVScale && TheFunction->hasFnAttribute(Attribute::VScaleRange))
+    MaxVScale =
+        TheFunction->getFnAttribute(Attribute::VScaleRange).getVScaleRangeMax();
   MaxScalableVF = ElementCount::getScalable(
       MaxVScale ? (MaxSafeElements / MaxVScale.getValue()) : 0);
   if (!MaxScalableVF)
@@ -7570,8 +7564,12 @@ LoopVectorizationCostModel::getInstructionCost(Instruction *I, ElementCount VF,
     Type *CondTy = SI->getCondition()->getType();
     if (!ScalarCond)
       CondTy = VectorType::get(CondTy, VF);
-    return TTI.getCmpSelInstrCost(I->getOpcode(), VectorTy, CondTy,
-                                  CmpInst::BAD_ICMP_PREDICATE, CostKind, I);
+
+    CmpInst::Predicate Pred = CmpInst::BAD_ICMP_PREDICATE;
+    if (auto *Cmp = dyn_cast<CmpInst>(SI->getCondition()))
+      Pred = Cmp->getPredicate();
+    return TTI.getCmpSelInstrCost(I->getOpcode(), VectorTy, CondTy, Pred,
+                                  CostKind, I);
   }
   case Instruction::ICmp:
   case Instruction::FCmp: {
@@ -7581,7 +7579,8 @@ LoopVectorizationCostModel::getInstructionCost(Instruction *I, ElementCount VF,
       ValTy = IntegerType::get(ValTy->getContext(), MinBWs[Op0AsInstruction]);
     VectorTy = ToVectorTy(ValTy, VF);
     return TTI.getCmpSelInstrCost(I->getOpcode(), VectorTy, nullptr,
-                                  CmpInst::BAD_ICMP_PREDICATE, CostKind, I);
+                                  cast<CmpInst>(I)->getPredicate(), CostKind,
+                                  I);
   }
   case Instruction::Store:
   case Instruction::Load: {
@@ -9165,7 +9164,6 @@ VPlanPtr LoopVectorizationPlanner::buildVPlanWithVPRecipes(
          !Plan->getEntry()->getEntryBasicBlock()->empty() &&
          "entry block must be set to a VPRegionBlock having a non-empty entry "
          "VPBasicBlock");
-  cast<VPRegionBlock>(Plan->getEntry())->setExit(VPBB);
   RecipeBuilder.fixHeaderPhis();
 
   // ---------------------------------------------------------------------------
@@ -9235,6 +9233,8 @@ VPlanPtr LoopVectorizationPlanner::buildVPlanWithVPRecipes(
         VPBB = SplitBlock;
     }
   }
+
+  cast<VPRegionBlock>(Plan->getEntry())->setExit(VPBB);
 
   // Now that sink-after is done, move induction recipes for optimized truncates
   // to the phi section of the header block.

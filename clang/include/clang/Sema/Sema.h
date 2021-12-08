@@ -1324,12 +1324,15 @@ public:
 
     bool isImmediateFunctionContext() const {
       return Context == ExpressionEvaluationContext::ImmediateFunctionContext ||
-             InImmediateFunctionContext;
+             (Context == ExpressionEvaluationContext::DiscardedStatement &&
+              InImmediateFunctionContext);
     }
 
     bool isDiscardedStatementContext() const {
       return Context == ExpressionEvaluationContext::DiscardedStatement ||
-             InDiscardedStatement;
+             (Context ==
+                  ExpressionEvaluationContext::ImmediateFunctionContext &&
+              InDiscardedStatement);
     }
   };
 
@@ -2043,7 +2046,7 @@ public:
                          SourceLocation Loc);
   QualType BuildWritePipeType(QualType T,
                          SourceLocation Loc);
-  QualType BuildExtIntType(bool IsUnsigned, Expr *BitWidth, SourceLocation Loc);
+  QualType BuildBitIntType(bool IsUnsigned, Expr *BitWidth, SourceLocation Loc);
 
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S);
   TypeSourceInfo *GetTypeForDeclaratorCast(Declarator &D, QualType FromTy);
@@ -2218,6 +2221,11 @@ private:
   Module *getCurrentModule() const {
     return ModuleScopes.empty() ? nullptr : ModuleScopes.back().Module;
   }
+
+  /// Enter the scope of the global module.
+  Module *PushGlobalModuleFragment(SourceLocation BeginLoc, bool IsImplicit);
+  /// Leave the scope of the global module.
+  void PopGlobalModuleFragment();
 
   VisibleModuleSet VisibleModules;
 
@@ -12835,7 +12843,7 @@ private:
   bool CheckPPCMMAType(QualType Type, SourceLocation TypeLoc);
 
   bool SemaBuiltinElementwiseMath(CallExpr *TheCall);
-  bool SemaBuiltinElementwiseMathOneArg(CallExpr *TheCall);
+  bool PrepareBuiltinElementwiseMathOneArgCall(CallExpr *TheCall);
   bool SemaBuiltinReduceMath(CallExpr *TheCall);
 
   // Matrix builtin handling.
