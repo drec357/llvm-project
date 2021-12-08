@@ -3488,6 +3488,8 @@ ExpansionStatementBuilder::Build()
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
 
+  SemaRef.Diag(RangeExpr->getExprLoc(),
+               diag::err_expansion_range_type_not_supported);
   // FIXME: Diagnose this error.
   return StmtError();
 }
