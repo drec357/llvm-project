@@ -6383,9 +6383,9 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
 
   // If the callee is a code injecting metafunction, so is the caller.
   if (LangOpts.StringInjection) {
-    assert(isa<CallExpr>(Call.get()->IgnoreImplicit()));
+    assert(isa<CallExpr>(Call.get()->IgnoreImplicitAsWritten()));
     const FunctionDecl *FD =
-        cast<CallExpr>(Call.get()->IgnoreImplicit())->getDirectCallee();
+        cast<CallExpr>(Call.get()->IgnoreImplicitAsWritten())->getDirectCallee();
     if (FD && FD->isCodeInjectingMetafunction()) {
       assert(isa<FunctionDecl>(CurContext));
       cast<FunctionDecl>(CurContext)->setIsCodeInjectingMetafunction();
