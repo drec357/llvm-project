@@ -1,10 +1,7 @@
-// RUN: %clang_cc1 -std=c++1z -fstring-injection -verify %s
-// expected-no-diagnostics
-
-#define assert(E) if (!(E)) __builtin_abort();
+#include <cassert>
 
 static_assert(__has_extension(string_injection),
-    "Must pass -fstring-injection to compiler");
+    "Pass -fstring-injection to compiler");
 
 static constexpr const char *five = "5";
 static const char *fiveB = "5";
@@ -16,7 +13,7 @@ consteval {
   __injf("");
   __inj("static const int h = 2;");
   __inj("static const int i = h + ", 1, ";");
-  __injf("{} int {} = {} + {} + {};", "constexpr", "j", 4, five, "i");
+  __injf("constexpr int {} = {} + {} + {};", "j", 4, five, "i");
   __inj("//does nothing");
 
   __injf("//single arg to injf okay");
@@ -29,7 +26,6 @@ consteval {
 
   // If not terminated via subsequent __inj/__injf statements in this same
   // consteval {}, the following should produce errors:
-
 //  __inj("void f("); //ERROR (FIXME: diagnostics suck)
 //  __inj("template<int I>>"); //ERROR
 //  __inj("template<int i, template<typename, "); //ERROR (FIXME: diagnostics suck)
@@ -37,11 +33,14 @@ consteval {
 //  __inj("\""); //ERROR
 //  __inj("/*"); //ERROR
 
+  // So long as each injected entity is terminated by the
+  // end of this consteval {} you're okay:
   __inj("void foo(");
-  __inj("int parm1, int parm2");
+  __injf("int {}, int {}", "parm1", "parm2");
   __inj("){");
   __inj("}");
 }
+
 static_assert(h==2);
 static_assert(i==3);
 static_assert(j==12);
@@ -171,6 +170,135 @@ consteval {
 }
 static_assert(y==51);
 
+
+
+
+
+
+
+
+
+// Injection via meta functions
+namespace metafuncinj {
+  consteval void a42() {
+    __inj("int a = 42;");
+  }
+  consteval void declare_intvar(const char *name, int val) {
+    __injf("int {} = {};", name, val);
+  }
+  template<typename INTORSTR>
+  consteval void declare_intorstrvar(const char *name, INTORSTR val) {
+    __injf("static constexpr auto {} = {};", name, val);
+  }
+  constexpr auto lambda_declare_intvar = [](const char *maybeinline, const char *name) -> void {
+    __injf("static {} int {} = 0;", maybeinline, name);
+  };
+  template<typename INTORSTR>
+  consteval auto set_var(const char *name, INTORSTR val) {
+    __injf("{} = {};", name, val);
+  }
+
+  // Namespace context
+  consteval {
+      a42();
+      declare_intvar("b", 43);
+      declare_intorstrvar("c", "\"asdf\"");
+      lambda_declare_intvar("inline", "d");
+      __inj("void d_increment_by_2() {");
+      set_var("d", "d+2");
+      __inj("}");
+  }
+  void testA() {
+    assert(a == 42);
+    assert(b == 43);
+    assert(c[0] == 'a' && c[3] == 'f');
+    metafuncinj::d = 0;
+    assert(d == 0);
+    d_increment_by_2();
+    assert(d == 2);
+  }
+
+  // Non-dependent class context
+  struct Foo {
+    consteval {
+        a42();
+        declare_intvar("b", 43);
+        declare_intorstrvar("c", "\"asdf\"");
+        lambda_declare_intvar("inline", "d");
+        __inj("void d_increment_by_2() {");
+        set_var("d", "d+2");
+        __inj("}");
+    }
+    void test() {
+      assert(a == 42);
+      assert(b == 43);
+      assert(c[0] == 'a' && c[3] == 'f');
+      assert(d == 0);
+      this->d_increment_by_2();
+      assert(d == 2);
+    }
+  };
+
+  // Non-dependent function context
+  void testB(int param2 = 2) {
+    static const int local43 = 43;
+    if (param2 == 2) {
+      int localVarInScope = 1;
+      consteval {
+        __inj("localVarInScope += 1;");
+        a42();
+        declare_intvar("b", local43);
+        declare_intorstrvar("c", "\"asdf\"");
+        lambda_declare_intvar("", "d");
+        __inj("auto d_increment_by_2 = [&](int zero = 0){");
+        set_var("d", "d + param2 + zero");
+        __inj("};");
+      }
+      assert(localVarInScope==2);
+      assert(a == 42);
+      assert(b == 43);
+      assert(c[0] == 'a' && c[3] == 'f');
+      assert(d == 0);
+      d_increment_by_2(0);
+      assert(d == 2);
+    }
+  }
+
+  // Dependent class context
+  template<int I>
+  struct B {
+    static const int memberTwo = 2;
+    consteval {
+        const char *name = I==3 ? "\"asdf\"" : "\"qwer\"";
+        a42();
+        declare_intvar("b", 40 + I);
+        declare_intorstrvar("c", name);
+        lambda_declare_intvar("inline", "d");
+        __inj("void d_increment_by_2() {");
+        set_var("d", "d + memberTwo");
+        __inj("}");
+    }
+    void test() {
+      assert(a == 42);
+      assert(b == 40 + I);
+      assert(c[0] == 'a' && c[3] == 'f');
+      assert(d == 0);
+      this->d_increment_by_2();
+      assert(d == 2);
+    }
+  };
+
+  // Explicit instantiation (this is needed to avoid
+  // a linker error regarding the static d, since it
+  // is not seen until instantiation - FIXME?)
+  template class B<3>;
+}
+
 int main() {
-  return 0;
+  metafuncinj::testA();
+  metafuncinj::Foo foo;
+  foo.test();
+  metafuncinj::testB(2);
+  metafuncinj::B<3> b3;
+  b3.test();
 }

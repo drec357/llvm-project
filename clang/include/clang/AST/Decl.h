@@ -2686,11 +2686,18 @@ public:
   }
 
   /// Whether this function is an instantiatable pattern and contains
-  /// a \c MetaprogramDecl ; e.g.
+  /// at least one dependent metaprogram with at least one
+  /// code injection statement
   /// \code
-  ///   template<typename T> void f() { consteval { ... } }
-  ///   template<typename T> class Foo { g() { consteval {...} } };
+  ///   template<typename T> void f() { consteval { } }
+  ///   template<typename T> consteval void g() { __inj(...) }
+  ///   template<typename T> void h() { consteval { f<T>() } }
+  ///   template<typename T> class Foo { i() { consteval { f<T>(); } } };
   /// \endcode
+  /// f<T>(): false
+  /// g<T>(): false
+  /// h<T>(): true
+  /// Foo<T>::i(): true
   bool hasDependentCodeInjectingMetaprograms() const {
     return FunctionDeclBits.HasDependentCodeInjectingMetaprograms;
   }

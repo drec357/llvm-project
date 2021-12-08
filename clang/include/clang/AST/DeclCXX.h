@@ -991,14 +991,20 @@ public:
   }
 
   /// Returns whether this record is an instantiatable pattern containing
-  /// a MetaprogramDecl among its child decls; e.g.
+  /// at least one dependent metaprogram with at least one code injection
+  /// statement; e.g.
   /// \code
-  ///   template<typename T> class Foo { consteval { ... } };
-  ///   template<typename U> class Foo<vector<U>> { consteval {...} };
-  ///   template<typename T> class Bar { class Inner { consteval {...} }; };
+  ///   template<typename T> consteval foo() { __inj(...); }
+  ///   template<typename T> class Foo { consteval { foo<T>() } };
+  ///   template<typename U> class Foo<vector<U>> { consteval { foo<U>() } };
+  ///   template<typename T>
+  //    class Bar {
+  //      class Inner { consteval { foo<T>() } };
+  //    };
   /// \endcode
   /// For Foo<T> and Foo<vector<U>>, and Bar<T>::Inner all have
-  /// hasDependentCodeInjectingMetaprograms() = true.  (For Bar<T> it is false.)
+  /// hasDependentCodeInjectingMetaprograms() = true.
+  /// (For Bar<T> it is false.)
   bool hasDependentCodeInjectingMetaprograms() const {
     return data().HasDependentCodeInjectingMetaprograms;
   }

@@ -248,7 +248,8 @@ FIELD(IsAnyDestructorNoReturn, 1, NO_MERGE)
 
 /// True if this is the templated decl of a ClassTemplateDecl,
 /// or a ClassTemplatePartialSpecializationDecl and contains
-/// a MetaprogramDecl with code injection statements.
+/// at least one dependent metaprogram with at least one code
+/// injection statement.
 FIELD(HasDependentCodeInjectingMetaprograms, 1, NO_MERGE)
 
 #undef FIELD
