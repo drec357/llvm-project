@@ -187,6 +187,11 @@ void Sema::ActOnFinishMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
 
   if (MpD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = MpD->getImplicitFunctionDecl();
+    // ActOnFinishFunctionBody expects we will have pushed an expression
+    // evaluation context during ActOnStartOfFunctionDef; since we don't
+    // call that we need to enter here.
+    EnterExpressionEvaluationContext ConstantEvaluated(
+      *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
     ActOnFinishFunctionBody(Fn, Body);
     if (!CurContext->isDependentContext()) {
       assert(!MpD->isDependent());
@@ -235,6 +240,11 @@ void Sema::ActOnMetaprogramDeclError(Scope *S, Decl *D) {
   MetaprogramDecl *MpD = cast<MetaprogramDecl>(D);
   MpD->setInvalidDecl();
   if (MpD->hasFunctionRepresentation()) {
+    // ActOnFinishFunctionBody expects we will have pushed an expression
+    // evaluation context during ActOnStartOfFunctionDef; since we don't
+    // call that we need to enter here.
+    EnterExpressionEvaluationContext ConstantEvaluated(
+      *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
     ActOnFinishFunctionBody(MpD->getImplicitFunctionDecl(), nullptr);
   } else {
     ActOnLambdaError(MpD->getLocation(), S);
