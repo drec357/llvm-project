@@ -110,7 +110,7 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       ImplicitCopyAssignmentHasConstParam(true),
       HasDeclaredCopyConstructorWithConstParam(false),
       HasDeclaredCopyAssignmentWithConstParam(false),
-      IsAnyDestructorNoReturn(false), IsPatternWithMetaprogram(false),
+      IsAnyDestructorNoReturn(false), HasDependentCodeInjectingMetaprograms(false),
       IsLambda(false), IsParsingBaseSpecifiers(false),
       ComputedVisibleConversions(false), HasODRHash(false), Definition(D) {}
 

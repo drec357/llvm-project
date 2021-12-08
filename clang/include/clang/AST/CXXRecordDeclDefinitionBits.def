@@ -247,8 +247,8 @@ FIELD(HasDeclaredCopyAssignmentWithConstParam, 1, MERGE_OR)
 FIELD(IsAnyDestructorNoReturn, 1, NO_MERGE)
 
 /// True if this is the templated decl of a ClassTemplateDecl,
-/// or a ClassTemplatePartialSpecializationDecl, and contains
-/// a MetaprogramDecl.
-FIELD(IsPatternWithMetaprogram, 1, NO_MERGE)
+/// or a ClassTemplatePartialSpecializationDecl and contains
+/// a MetaprogramDecl with code injection statements.
+FIELD(HasDependentCodeInjectingMetaprograms, 1, NO_MERGE)
 
 #undef FIELD

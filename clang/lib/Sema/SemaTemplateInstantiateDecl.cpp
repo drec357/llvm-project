@@ -1414,11 +1414,10 @@ Decl *TemplateDeclInstantiator::VisitMetaprogramDecl(MetaprogramDecl *D) {
       SemaRef.EvaluateMetaprogramDecl(MpD, NewFn);
     } else {
       MpD->setDependent();
-      // Since this has a function representation, and the context is dependent,
-      // this must have been declared inside a ClassTemplateDecl or
-      // ClassTemplatePartialSpecializationDecl; either way the CurContext is
-      // a CXXRecordDecl:
-      cast<CXXRecordDecl>(Owner)->setIsPatternWithMetaprogram();
+      // Tell the owning class whether this metaprogram contains code injection
+      // statements.
+      if (Fn->isCodeInjectingMetafunction())
+        cast<CXXRecordDecl>(Owner)->setHasDependentCodeInjectingMetaprograms();
     }
     return MpD;
   } else {
@@ -1449,9 +1448,11 @@ Decl *TemplateDeclInstantiator::VisitMetaprogramDecl(MetaprogramDecl *D) {
              && "I assumed if the NewLambdaExpr was type dependent, "
                 "the Owner would also be dependent");
       MpD->setDependent();
-      // Since this has a lambda representation, this was declared inside
-      // a dependent FunctionDecl.
-      cast<FunctionDecl>(Owner)->setIsPatternWithMetaprogram();
+      // Tell the owning function whether this metaprogram contains code injection
+      // statements.
+      CXXMethodDecl *Fn = MpD->getImplicitClosureCallOperator();
+      if (Fn->isCodeInjectingMetafunction())
+        cast<FunctionDecl>(Owner)->setHasDependentCodeInjectingMetaprograms();
       MpD->setImplicitLambdaExpr(NewLambdaExpr);
     }
     return MpD;
@@ -5038,8 +5039,8 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
 
   // Temporarily set the PII (the thing returned by
   // SemaRef.getParsingIntoInstantiationStatus()) to either
-  // PII_func or PII_false, depending on wither
-  // PatternDecl->isPatternWithMetaprogram().
+  // PII_func or PII_false, depending on whether
+  // PatternDecl->hasDependentCodeInjectingMetaprograms().
   SemaPIIRAII SavedPIIState(*this);
 
   // Construct an RAII object to save the parser state and enter the proper
@@ -5053,15 +5054,12 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   std::unique_ptr<TempParseIntoFuncInstantiation>
       TemporarilyParseIntoInstantiation;
 
-  if (PatternDecl->isPatternWithMetaprogram()) {
+  if (PatternDecl->hasDependentCodeInjectingMetaprograms()) {
     TemporarilyParseIntoInstantiation =
         std::make_unique<TempParseIntoFuncInstantiation>(*this);
     assert(PII == PII_func); //just to be sure we set PII correctly
   } else {
-    // If you don't need parsing, set the PII accordingly so that,
-    // in case you instantiate a non-needsParsing... function WHILE
-    // instantiating a yes-needsParsing... function, you make sure
-    // to turn off manipulating scopes and adding decls etc.
+    // Explicitly turn PII off.
     PII = PII_false; //read "ParsingIntoInstantiation_false"
   }
 

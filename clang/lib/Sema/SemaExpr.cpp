@@ -6381,6 +6381,13 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
     }
   }
 
+  // If the callee is a code injecting metafunction, so is the caller.
+  if (LangOpts.StringInjection) {
+    const FunctionDecl *FD = cast<CallExpr>(Call.get())->getDirectCallee();
+    if (FD && FD->isCodeInjectingMetafunction())
+      cast<FunctionDecl>(CurContext)->setIsCodeInjectingMetafunction();
+  }
+
   if (LangOpts.OpenMP)
     Call = ActOnOpenMPCall(Call, Scope, LParenLoc, ArgExprs, RParenLoc,
                            ExecConfig);
@@ -16667,8 +16674,15 @@ ExprResult Sema::CheckForImmediateInvocation(ExprResult E, FunctionDecl *Decl) {
   /// walking the AST looking for it in simple cases.
   if (auto *Call = dyn_cast<CallExpr>(E.get()->IgnoreImplicit()))
     if (auto *DeclRef =
-            dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreImplicit()))
+            dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreImplicit())) {
       ExprEvalContexts.back().ReferenceToConsteval.erase(DeclRef);
+      auto *FD = dyn_cast<FunctionDecl>(DeclRef->getDecl());
+      // If this function is a consteval function which injects code,
+      // we do not want to evaluate it yet; we will handle that in the
+      // enclosing metaprogram.
+      if (FD && FD->isCodeInjectingMetafunction())
+        return E;
+    }
 
   E = MaybeCreateExprWithCleanups(E);
 

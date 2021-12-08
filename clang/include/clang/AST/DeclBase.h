@@ -1619,7 +1619,12 @@ class DeclContext {
 
     /// Indicates if the function is an instantiatable pattern containing a
     /// MetaprogramDecl (consteval {...})
-    uint64_t IsPatternWithMetaprogram : 1;
+    uint64_t HasDependentCodeInjectingMetaprograms : 1;
+
+    /// Whether this function is a consteval function which
+    /// contains at least one code injection statement or
+    /// call to a function containing one.
+    uint64_t IsCodeInjectingMetafunction : 1;
   };
 
   /// Number of non-inherited bits in FunctionDeclBitfields.

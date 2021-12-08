@@ -2673,7 +2673,7 @@ public:
     setInstantiationOfMemberFunction(getASTContext(), FD, TSK);
   }
 
-  /// \brief Whether this function is the underlying implementation
+  /// Whether this function is the underlying implementation
   /// of a metaprogram (consteval {...})
   bool isMetaprogram() const {
     return getCanonicalDecl()->FunctionDeclBits.IsMetaprogram;
@@ -2691,13 +2691,27 @@ public:
   ///   template<typename T> void f() { consteval { ... } }
   ///   template<typename T> class Foo { g() { consteval {...} } };
   /// \endcode
-  bool isPatternWithMetaprogram() const {
-    return FunctionDeclBits.IsPatternWithMetaprogram;
+  bool hasDependentCodeInjectingMetaprograms() const {
+    return FunctionDeclBits.HasDependentCodeInjectingMetaprograms;
   }
   /// Specify that this function is an instantiatable pattern and
   /// contains a MetaprogramDecl .
-  void setIsPatternWithMetaprogram(bool V = true) {
-    FunctionDeclBits.IsPatternWithMetaprogram = V;
+  void setHasDependentCodeInjectingMetaprograms(bool V = true) {
+    FunctionDeclBits.HasDependentCodeInjectingMetaprograms = V;
+  }
+
+  /// Whether this function is a consteval function which
+  /// contains at least one code injection statement or
+  /// call to a function containing one.
+  bool isCodeInjectingMetafunction() const {
+    return getCanonicalDecl()->FunctionDeclBits.IsCodeInjectingMetafunction;
+  }
+
+  /// Specify that this function is a consteval function which
+  /// contains at least one code injection statement or
+  /// call to a function containing one.
+  void setIsCodeInjectingMetafunction(bool V = true) {
+    FunctionDeclBits.IsCodeInjectingMetafunction = V;
   }
 
   /// Retrieves the function template that is described by this

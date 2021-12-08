@@ -2872,8 +2872,8 @@ def err_placeholder_constraints_not_satisfied : Error<
 // String Injection
 def err_expected_int_or_str : Error<
   "expected either integer or string operand">;
-def err_metaprogram_fold_failure : Error<
-  "Metaprogram's statements could not all be constant-evaluated">;
+def err_metaprogram_eval_failure : Error<
+  "Not all statements in consteval {} could be constant-evaluated">;
 
 // Custom diagnostics
 def err_user_defined_error : Error<"((%0))">;

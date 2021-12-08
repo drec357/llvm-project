@@ -2495,13 +2495,6 @@ bool QualType::isTriviallyCopyableType(const ASTContext &Context) const {
   return false;
 }
 
-static const QualType seeThroughAlias(QualType Ty) {
-  if (const TypedefType *TDT = dyn_cast<TypedefType>(Ty.getTypePtr()))
-    return TDT->desugar();
-  else
-    return Ty;
-}
-
 static bool isConstCharPtr(QualType Ty) {
   if (const PointerType *Ptr = dyn_cast<PointerType>(Ty))
     Ty = Ptr->getPointeeType();
@@ -2515,10 +2508,10 @@ static bool isCharArray(QualType Ty) {
 }
 
 bool QualType::isCXXStringLiteralType() const {
-  const QualType Ty = seeThroughAlias(*this);
-  if (isConstCharPtr(Ty))
+  QualType CanonTy = getCanonicalType();
+  if (isConstCharPtr(CanonTy))
     return true;
-  if (isCharArray(Ty))
+  if (isCharArray(CanonTy))
     return true;
   return false;
 }

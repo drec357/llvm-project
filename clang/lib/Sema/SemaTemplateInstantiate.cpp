@@ -2788,14 +2788,14 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     FieldCollector->FinishClass();
   };
 
-  // Regardless of whether the Pattern->isPatternWithMetaprogram(),
+  // Regardless of whether the Pattern->hasDependentCodeInjectingMetaprograms(),
   // and whether that metaprogram contains __inj statements,
   // we will set the PII (the ParsingIntoInstantiation state)
   // and restore it upon exiting. (If IsPatternWithMetapgoram,
   // we'll set it to PII_class; if not, PII_false.)
   SemaPIIRAII SavedPIIState(*this);
 
-  if (Pattern->isPatternWithMetaprogram()) {
+  if (Pattern->hasDependentCodeInjectingMetaprograms()) {
     // Pass along the AccessAttrs; this is intended to hold attributes
     // collected while parsing injected strings.
     // FIXME I'm not sure if this is really needed, or if we are making
@@ -3325,9 +3325,13 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
 
         if (Function->hasAttr<ExcludeFromExplicitInstantiationAttr>())
           continue;
-
         MemberSpecializationInfo *MSInfo =
             Function->getMemberSpecializationInfo();
+
+        // Members instantiated from injected strings will have no MSInfo.
+        if (LangOpts.StringInjection && !MSInfo)
+          continue;
+
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
                                                  == TSK_ExplicitSpecialization)
@@ -3372,6 +3376,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
           continue;
 
         MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
+
+        // Members instantiated from injected strings will have no MSInfo.
+        if (LangOpts.StringInjection && !MSInfo)
+          continue;
+
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
                                                  == TSK_ExplicitSpecialization)
@@ -3415,6 +3424,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
         continue;
 
       MemberSpecializationInfo *MSInfo = Record->getMemberSpecializationInfo();
+
+      // Members instantiated from injected strings will have no MSInfo.
+      if (LangOpts.StringInjection && !MSInfo)
+        continue;
+
       assert(MSInfo && "No member specialization information?");
 
       if (MSInfo->getTemplateSpecializationKind()
@@ -3477,6 +3491,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
                                 TSK);
     } else if (auto *Enum = dyn_cast<EnumDecl>(D)) {
       MemberSpecializationInfo *MSInfo = Enum->getMemberSpecializationInfo();
+
+      // Members instantiated from injected strings will have no MSInfo.
+      if (LangOpts.StringInjection && !MSInfo)
+        continue;
+
       assert(MSInfo && "No member specialization information?");
 
       if (MSInfo->getTemplateSpecializationKind()

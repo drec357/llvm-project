@@ -14503,7 +14503,8 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *D, Stmt *BodyArg) {
 /// body.
 class ExitFunctionBodyRAII {
 public:
-  ExitFunctionBodyRAII(Sema &S, bool IsLambda) : S(S), IsLambda(IsLambda) {}
+  ExitFunctionBodyRAII(Sema &S, bool IsLambda)
+      : S(S), IsLambda(IsLambda) {}
   ~ExitFunctionBodyRAII() {
     if (!IsLambda)
       S.PopExpressionEvaluationContext();
@@ -14880,13 +14881,18 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
         }
       }
 
+#ifndef NDEBUG
       assert(ExprCleanupObjects.size() ==
                  ExprEvalContexts.back().NumCleanupObjects &&
              "Leftover temporaries in function");
       assert(!Cleanup.exprNeedsCleanups() &&
              "Unaccounted cleanups in function");
+      for (auto E : MaybeODRUseExprs)
+        E->dump();
       assert(MaybeODRUseExprs.empty() &&
-             "Leftover expressions for odr-use checking");
+             "Leftover expressions for odr-use checking; see dumps ^. "
+             "(Maybe you did not EnterExpressionEvaluationContext before eval?)");
+#endif
     }
   } // Pops the ExitFunctionBodyRAII scope, which needs to happen before we pop
     // the declaration context below. Otherwise, we're unable to transform

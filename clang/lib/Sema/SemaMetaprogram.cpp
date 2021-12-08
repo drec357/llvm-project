@@ -122,7 +122,7 @@ Decl *Sema::ActOnMetaprogramDecl(Scope *S, SourceLocation ConstevalLoc,
 
     LambdaIntroducer Intro;
     Intro.Range = SourceRange(ConstevalLoc);
-    // [DWR] ByRef is sufficient, as this will be called just after it is defined,
+    // ByRef is sufficient, as this will be called just after it is defined,
     // so no issue with referenced temporaries being out of scope at call time:
     Intro.Default = LCD_ByRef;
 
@@ -171,10 +171,10 @@ void Sema::ActOnStartMetaprogramDecl(Scope *S, Decl *D) {
     else
       CurContext = LSI->CallOperator;
   }
-  // DWR NOTE: we already handled PushFunctionScope etc.
+  // We already handled PushFunctionScope etc.
   // in ActOnMetaprogramDecl.  All that remains to do
   // is PushExpressionEvaluationContext:
-  // DWR FIXME should this be ConstantFold or something?
+  // FIXME should this be EM_ConstantExpression?
   PushExpressionEvaluationContext(
       ExpressionEvaluationContext::PotentiallyEvaluated);
 }
@@ -198,14 +198,14 @@ void Sema::ActOnFinishMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
     } else {
       MpD->setDependent();
       assert(!MpD->alreadyRun());
-      // Since this has a function representation, and the context is dependent,
-      // this must have been declared inside a ClassTemplateDecl or
-      // ClassTemplatePartialSpecializationDecl; either way the CurContext is
-      // a CXXRecordDecl:
-      cast<CXXRecordDecl>(CurContext)->setIsPatternWithMetaprogram();
+      // Tell the owning class whether this metaprogram contains code injection
+      // statements.
+      if (Fn->isCodeInjectingMetafunction())
+        cast<CXXRecordDecl>(CurContext)->setHasDependentCodeInjectingMetaprograms();
     }
   } else {
     ExprResult Lambda = ActOnLambdaExpr(MpD->getLocation(), Body, S);
+    CXXMethodDecl *Fn = MpD->getImplicitClosureCallOperator();
     if (!CurContext->isDependentContext()) {
       assert(!MpD->isDependent());
       ParserBrickWallRAII SavedParserState(getParser());
@@ -216,9 +216,10 @@ void Sema::ActOnFinishMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
     } else {
       MpD->setDependent();
       assert(!MpD->alreadyRun());
-      // Since this has a lambda representation, this was declared inside
-      // a dependent FunctionDecl.
-      cast<FunctionDecl>(CurContext)->setIsPatternWithMetaprogram();
+      // Tell the owning function whether this metaprogram contains code
+      // injection statements.
+      if (Fn->isCodeInjectingMetafunction())
+        cast<FunctionDecl>(CurContext)->setHasDependentCodeInjectingMetaprograms();
       MpD->setImplicitLambdaExpr(Lambda.get());
     }
   }
@@ -308,8 +309,8 @@ bool Sema::EvaluateMetaprogramDeclCall(MetaprogramDecl *MpD,
   Expr::EvalResult Result;
   Result.Diag = &Notes;
 
-  SmallVector<const StringLiteral *, 16> StringInjectionChunks; //DWR ADDN
-  Result.StringInjectionChunks = &StringInjectionChunks; //DWR ADDN
+  SmallVector<const StringLiteral *, 16> StringInjectionChunks;
+  Result.StringInjectionChunks = &StringInjectionChunks;
 
   assert(Call->getType()->isVoidType());
   if (!Call->EvaluateAsVoid(Result, Context)) {
@@ -321,14 +322,13 @@ bool Sema::EvaluateMetaprogramDeclCall(MetaprogramDecl *MpD,
     // raised, we should avoid this error in such cases, as it's
     // redundant.
     if (Notes.empty())
-      Diag(MpD->getEndLoc(), diag::err_metaprogram_fold_failure);
+      Diag(MpD->getEndLoc(), diag::err_metaprogram_eval_failure);
     else {
       // If we got a compiler error, then just emit that.
       if (Notes[0].second.getDiagID() == diag::err_user_defined_error)
         Diag(MpD->getBeginLoc(), Notes[0].second);
-      else /*if (Notes[0].second.getDiagID() !=
-                  diag::note_constexpr_uninitialized)*/ {
-        Diag(MpD->getEndLoc(), diag::err_metaprogram_fold_failure);
+      else {
+        Diag(MpD->getEndLoc(), diag::err_metaprogram_eval_failure);
         for (const PartialDiagnosticAt &Note : Notes)
           Diag(Note.first, Note.second);
       }
@@ -360,6 +360,7 @@ StmtResult Sema::ActOnStringInjectionStmt(SourceLocation KeywordLoc,
                                           StringLiteral *WrittenFirstArg) {
   if (!AnyDependent && !PrepareStrIntArgsForEval(Args))
     return StmtError();
+  cast<FunctionDecl>(CurContext)->setIsCodeInjectingMetafunction(true);
   return StringInjectionStmt::Create(Context, KeywordLoc, LParenLoc,
                                        Args, RParenLoc, WrittenFirstArg);
 }
@@ -455,16 +456,16 @@ InjectQueuedStrings(SourceLocation POI,
   Sema::ContextRAII(*this, CurContext);
   assert(CurContext);
 
+  // For metaprograms in a non-dependent context, temporarily pop the scope
+  // to escape the implicit function declaration scope, to ensure proper lookup
+  // and injection.  (We do not have to worry about this for template
+  // instantiations.)
+  llvm::SaveAndRestore<Scope *> ScopeRAII(CurScope);
+  if (!MpD->isInstantiation())
+    CurScope = CurScope->getParent();
+
   if (MetaCtx.isFunctionContext()) {
     assert(CurContext->isFunctionOrMethod());
-    
-    // For metaprograms declared in a non-dependent function context,
-    // in order to inject declarations into the outer function and reference
-    // them subsequently, we have to temporarily pop the scope to escape the
-    // implicit lambda scope.
-    llvm::SaveAndRestore<Scope *> ScopeRAII(CurScope);
-    if (!MpD->isInstantiation())
-      CurScope = CurScope->getParent();
 
     // ParseCompoundStatementBody expects the current tok to be
     // an l_brace, so we make it so:
@@ -492,7 +493,6 @@ InjectQueuedStrings(SourceLocation POI,
     MpD->setStmtResult(sr);
 
   } else { //kind is cls or extdecl:
-
     assert(!CurContext->isFunctionOrMethod() &&
            "Either MetaprogramContext wasn't constructed correctly, "
            "or this is a nested case and you perhaps need to "
@@ -597,6 +597,8 @@ static bool IsIntOrStr(QualType T) {
 static bool CheckIsIntOrStr(Sema &SemaRef, Expr *E) {
   if (IsIntOrStr(E->getType()))
     return true;
+  E->dump(); //[DELETEME]
+  E->getType()->dump();
   SemaRef.Diag(E->getExprLoc(), diag::err_expected_int_or_str);
   return false;
 }

@@ -14900,7 +14900,8 @@ bool Expr::EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx,
 }
 
 bool Expr::EvaluateAsVoid(EvalResult &Result, const ASTContext &Ctx) const {
-  EvalInfo Info(Ctx, Result, EvalInfo::EM_ConstantFold); //FIXME EM right?
+  EvalInfo Info(Ctx, Result, EvalInfo::EM_ConstantExpression);
+  Info.InConstantContext = true;
   return ::EvaluateVoid(this, Info);
 }
 

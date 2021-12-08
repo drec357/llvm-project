@@ -998,15 +998,15 @@ public:
   ///   template<typename T> class Bar { class Inner { consteval {...} }; };
   /// \endcode
   /// For Foo<T> and Foo<vector<U>>, and Bar<T>::Inner all have
-  /// isPatternWithMetaprogram() = true.  (For Bar<T> it is false.)
-  bool isPatternWithMetaprogram() const {
-    return data().IsPatternWithMetaprogram;
+  /// hasDependentCodeInjectingMetaprograms() = true.  (For Bar<T> it is false.)
+  bool hasDependentCodeInjectingMetaprograms() const {
+    return data().HasDependentCodeInjectingMetaprograms;
   }
 
   /// Specify that this record is an instantiatable pattern containing
   /// a MetaprogramDecl among its child decls.
-  void setIsPatternWithMetaprogram(bool V = true) {
-    data().IsPatternWithMetaprogram = V;
+  void setHasDependentCodeInjectingMetaprograms(bool V = true) {
+    data().HasDependentCodeInjectingMetaprograms = V;
   }
 
   /// Determine whether this class describes a lambda function object.
