@@ -49,9 +49,9 @@ def ObjCAutoreleasePoolStmt : StmtNode<Stmt>;
 def CXXCatchStmt : StmtNode<Stmt>;
 def CXXTryStmt : StmtNode<Stmt>;
 def CXXForRangeStmt : StmtNode<Stmt>;
-def CXXExpansionStmt : StmtNode<Stmt, 1>;
-def CXXCompositeExpansionStmt : StmtNode<CXXExpansionStmt>;
-def CXXPackExpansionStmt : StmtNode<CXXExpansionStmt>;
+def CXXTemplateForRangeStmt : StmtNode<Stmt, 1>;
+def CXXTemplateForRangeVarStmt : StmtNode<CXXTemplateForRangeStmt>;
+def CXXTemplateForRangePackStmt : StmtNode<CXXTemplateForRangeStmt>;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : StmtNode<Stmt>;
@@ -156,9 +156,9 @@ def UnresolvedLookupExpr : StmtNode<OverloadExpr>;
 def UnresolvedMemberExpr : StmtNode<OverloadExpr>;
 def CXXNoexceptExpr : StmtNode<Expr>;
 def PackExpansionExpr : StmtNode<Expr>;
-def CXXSelectionExpr : StmtNode<Expr, 1>;
-def CXXSelectMemberExpr : StmtNode<CXXSelectionExpr>;
-def CXXSelectPackExpr : StmtNode<CXXSelectionExpr>;
+def BuiltinSelectExpr : StmtNode<Expr, 1>;
+def BuiltinSelectMemberExpr : StmtNode<BuiltinSelectExpr>;
+def BuiltinSelectPackElemExpr : StmtNode<BuiltinSelectExpr>;
 def SizeOfPackExpr : StmtNode<Expr>;
 def SubstNonTypeTemplateParmExpr : StmtNode<Expr>;
 def SubstNonTypeTemplateParmPackExpr : StmtNode<Expr>;

@@ -406,7 +406,7 @@ MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
 // C++ `template for` keyword
-KEYWORD(__select_member             , KEYTEMPLATEFOR)
+KEYWORD(__select             , KEYTEMPLATEFOR)
 
 // C++20 keywords.
 CXX20_KEYWORD(consteval             , 0)

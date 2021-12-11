@@ -2783,13 +2783,15 @@ def warn_private_extern : Warning<
 def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
-// tuple and pack loops
+// TemplateFor
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
-def err_select_index_not_constant : Error<
-  "Index of a __select expression must be a constant expression.">;
-def err_select_index_exceeds_bounds : Error<
-  "A member may not be selected at an out-of-bounds index.">;
+def err_index_not_ice : Error<
+  "index not an integer constant expression.">;
+def err_index_exceeds_bounds : Error<
+  "index exceeds number of members">;
+def err_expected_object_or_pack : Error<
+  "expected class object variable or pack">;
 
 // C++ Concepts
 def err_concept_decls_may_only_appear_in_global_namespace_scope : Error<
@@ -5441,8 +5443,12 @@ def err_fold_expression_limit_exceeded: Error<
   "instantiating fold expression with %0 arguments exceeded expression nesting "
   "limit of %1">, DefaultFatal, NoSFINAE;
 
-def err_expansion_range_type_not_supported : Error<
-  "Expansion range is not an array, tuple, or range type">;
+def err_templatefor_range_var_not_expandable : Error<
+  "type %0 is not compile-time expandable">;
+def note_not_overloaded_function : Note<"not an overloaded function">;
+def note_no_member : Note<"no member named %0 in %1">;
+def note_incomplete_type : Error<
+  "incomplete type %0 where a complete type is required">;
 
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;

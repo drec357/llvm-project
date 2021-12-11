@@ -4037,9 +4037,9 @@ ExprResult Parser::ParseBuiltinBitCast() {
 }
 
 ExprResult
-Parser::ParseCXXSelectMemberExpr() {
-  assert(Tok.is(tok::kw___select_member) && "Not __select_member!");
-  SourceLocation KWLoc = ConsumeToken();
+Parser::ParseBuiltinSelectExpr() {
+  assert(Tok.is(tok::kw___select) && "Not __select!");
+  SourceLocation SelectLoc = ConsumeToken();
 
   BalancedDelimiterTracker Parens(*this, tok::l_paren);
   if (Parens.expectAndConsume())
@@ -4054,36 +4054,20 @@ Parser::ParseCXXSelectMemberExpr() {
   if (Exprs.size() != 2)
     return ExprError();
 
-  // If we cannot find a record decl for the record object,
-  // just quit now.
-  Expr *Base = Exprs.front();
+  Expr *Range = Exprs.front();
   Expr *Index = Exprs.back();
-  // // TODO: will this conflict with unqualid or idexpr?
-  // FIXME: what about typos?
-  if (!isa<DeclRefExpr>(Base))
-    return ExprError();
-  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
 
   // If this is a parameter pack, we don't need any knowledge
   // of the record and there won't be a VarDecl. Just return here.
-  if (BaseDRE->containsUnexpandedParameterPack())
-    return Actions.ActOnCXXSelectPackExpr(BaseDRE, Index,
-                                          KWLoc,
-                                          BaseDRE->getLocation(),
-                                          Index->getExprLoc());
+  if (Range->containsUnexpandedParameterPack())
+    return Actions.ActOnBuiltinSelectPackElemExpr(SelectLoc, Range, Index);
 
-  // Otherwise, we are trying to destructure a class.
-  Decl *FoundDecl = BaseDRE->getDecl();
-  if (!isa<VarDecl>(FoundDecl))
-    return ExprError();
-  VarDecl *BaseVar =
-    cast<VarDecl>(FoundDecl);
-  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
-  if (!Record && !BaseVar->getType()->isDependentType())
-    return ExprError();
-
-  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
-                                          KWLoc,
-                                          BaseDRE->getLocation(),
-                                          Index->getExprLoc());
+  // Otherwise, we expect to be the range to refer to a class object.
+  if (!isa<DeclRefExpr>(Range)) {
+    ExprResult TypoFix = Actions.CorrectDelayedTyposInExpr(Range).get();
+    if (TypoFix.get())
+      Range = TypoFix.get();
+    // We'll diagnose in ActOn...
+  }
+  return Actions.ActOnBuiltinSelectMemberExpr(SelectLoc, Range, Index);
 }

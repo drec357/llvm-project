@@ -427,7 +427,7 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           SemaRef, CodeSynthesisContext::ParameterMappingSubstitution,
           PointOfInstantiation, InstantiationRange, Template) {}
 
-// For template-for instantiation.
+// template-for instantiation.
 Sema::InstantiatingTemplate::InstantiatingTemplate(
     Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
     ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)

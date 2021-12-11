@@ -5386,27 +5386,27 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return Scope.destroy() ? ESR_Succeeded : ESR_Failed;
   }
 
-  case Stmt::CXXCompositeExpansionStmtClass: {
-    const CXXCompositeExpansionStmt *ES = cast<CXXCompositeExpansionStmt>(S);
+  case Stmt::CXXTemplateForRangeVarStmtClass: {
+    const CXXTemplateForRangeVarStmt *FS = cast<CXXTemplateForRangeVarStmt>(S);
     BlockScopeRAII Scope(Info);
 
-    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeVarStmt());
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, FS->getRangeStmt());
     if (ESR != ESR_Succeeded)
       return ESR;
 
     // Create the __begin and __end iterators if they exist.
-    if (ES->getBeginStmt()) {
-      ESR = EvaluateStmt(Result, Info, ES->getBeginStmt());
+    if (const Stmt *Begin = FS->getBeginStmt()) {
+      ESR = EvaluateStmt(Result, Info, Begin);
       if (ESR != ESR_Succeeded)
         return ESR;
     }
-    if (ES->getEndStmt()) {
-      ESR = EvaluateStmt(Result, Info, ES->getEndStmt());
+    if (const Stmt *End = FS->getEndStmt()) {
+      ESR = EvaluateStmt(Result, Info, End);
       if (ESR != ESR_Succeeded)
         return ESR;
     }
 
-    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+    for (const Stmt *SubStmt : FS->getInstantiatedStatements()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
@@ -5417,15 +5417,19 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
-  case Stmt::CXXPackExpansionStmtClass: {
-    const CXXPackExpansionStmt *ES = cast<CXXPackExpansionStmt>(S);
+  case Stmt::CXXTemplateForRangePackStmtClass: {
+    const CXXTemplateForRangePackStmt *FS = cast<CXXTemplateForRangePackStmt>(S);
     BlockScopeRAII Scope(Info);
 
-    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeExprStmt());
-    if (ESR != ESR_Succeeded)
-      return ESR;
+    EvalStmtResult ESR;
+    // We do not need nor want to evaluate FS->getRangeStmt(), as that is
+    // either a FunctionParmPackExpr or SubstNonTypeTemplateParmExpr which
+    // cannot be evaluated, and in any case we have already used them to
+    // find the necessary substitute DeclRefs and instantiate them throughout
+    // the body via BuiltinSelectPackElemExprs, so that will not be referenced
+    // during evaluation of the instantiated bodies.
 
-    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+    for (Stmt *SubStmt : FS->getInstantiatedStatements()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
@@ -8125,8 +8129,8 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
-  bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
-  bool VisitCXXSelectPackExpr(const CXXSelectPackExpr *E);
+  bool VisitBuiltinSelectMemberExpr(const BuiltinSelectMemberExpr *E);
+  bool VisitBuiltinSelectPackElemExpr(const BuiltinSelectPackElemExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -8434,18 +8438,14 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 }
 
 bool
-LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
-  const MemberExpr *Member = dyn_cast<MemberExpr>(E->getValue());
-  if (!Member)
-    return false;
-  return VisitMemberExpr(Member);
+LValueExprEvaluator::VisitBuiltinSelectMemberExpr(
+                                           const BuiltinSelectMemberExpr *E) {
+  return VisitMemberExpr(E->getSubstituteExpr());
 }
 
-bool LValueExprEvaluator::VisitCXXSelectPackExpr(const CXXSelectPackExpr *E) {
-  const Expr *Expansion = E->getValue();
-  if (!Expansion)
-    return false;
-  return VisitExpr(Expansion);
+bool LValueExprEvaluator::VisitBuiltinSelectPackElemExpr(
+                                         const BuiltinSelectPackElemExpr *E) {
+  return VisitDeclRefExpr(E->getSubstituteExpr());
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -15242,10 +15242,10 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     return ICEDiag(IK_NotICE, E->getBeginLoc());
   }
 
-  case Expr::CXXSelectMemberExprClass:
-  case Expr::CXXSelectPackExprClass:
-    // This is an ICE if its Base is an ICE
-    return CheckICE(cast<CXXSelectionExpr>(E)->getBase(), Ctx);
+  case Expr::BuiltinSelectMemberExprClass:
+  case Expr::BuiltinSelectPackElemExprClass:
+    // This is an ICE if its range expression is an ICE.
+    return CheckICE(cast<BuiltinSelectExpr>(E)->getRangeExpr(), Ctx);
 
   case Expr::SizeOfPackExprClass:
   case Expr::GNUNullExprClass:

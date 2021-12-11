@@ -4816,26 +4816,31 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
-  StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                   SourceLocation AnnotationLoc, Stmt *LoopVar,
-                                   SourceLocation ColonLoc, Expr *RangeVar,
-                                   SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind, bool IsConstexpr);
-  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
-                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
-                                   SourceLocation ColonLoc, Stmt *RangeVar,
-                                   SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind, bool IsConstexpr);
-  /// Build a CXXExpansionStmt over a pack.
-  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
-                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
-                                   SourceLocation ColonLoc, Expr *RangeExpr,
-                                   SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind, bool IsConstexpr);
+  StmtResult
+  ActOnCXXTemplateForRangeStmt(Scope *S, SourceLocation TemplateForLoc,
+                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                               SourceLocation ColonLoc,
+                               SourceLocation StructLoc, Expr *RangeVarDS,
+                               SourceLocation RParenLoc,
+                               BuildForRangeKind Kind, bool IsConstexpr);
+  StmtResult
+  ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
+                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                               SourceLocation ColonLoc,
+                               SourceLocation StructLoc, Stmt *RangeVarDS,
+                               SourceLocation RParenLoc, BuildForRangeKind Kind,
+                               bool IsConstexpr);
+  /// Build a CXXTemplateForRangeStmt over a pack.
+  StmtResult
+  ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
+                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                               SourceLocation ColonLoc, Expr *RangeExpr,
+                               SourceLocation RParenLoc, BuildForRangeKind Kind,
+                               bool IsConstexpr);
 
-  StmtResult ActOnCXXExpansionStmtError(Stmt *S);
+  StmtResult ActOnCXXTemplateForRangeStmtError(Stmt *S);
 
-  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
+  StmtResult FinishCXXTemplateForRangeStmt(Stmt *Expansion, Stmt *Body);
 
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
@@ -7354,15 +7359,10 @@ public:
   DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
                                            const CXXRecordDecl *RD,
                                            CXXCastPath &BasePath);
-  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
-                                      VarDecl *Base, Expr *Index,
-                                      SourceLocation KWLoc = SourceLocation(),
-                                      SourceLocation BaseLoc = SourceLocation(),
-                                      SourceLocation IdxLoc = SourceLocation());
-  ExprResult ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
-                                    SourceLocation KWLoc = SourceLocation(),
-                                    SourceLocation BaseLoc = SourceLocation(),
-                                    SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnBuiltinSelectMemberExpr(SourceLocation SelectLoc,
+                                          Expr *Range, Expr *Index);
+  ExprResult ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
+                                            Expr *Range, Expr *Index);
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,

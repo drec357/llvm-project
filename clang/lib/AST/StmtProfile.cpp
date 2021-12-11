@@ -345,12 +345,13 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+void StmtProfiler::VisitCXXTemplateForRangePackStmt(
+                                        const CXXTemplateForRangePackStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXCompositeExpansionStmt(
-                                           const CXXCompositeExpansionStmt *S) {
+void StmtProfiler::VisitCXXTemplateForRangeVarStmt(
+                                         const CXXTemplateForRangeVarStmt *S) {
   VisitStmt(S);
 }
 
@@ -1347,15 +1348,17 @@ void StmtProfiler::VisitOMPIteratorExpr(const OMPIteratorExpr *S) {
     VisitDecl(S->getIteratorDecl(I));
 }
 
-void StmtProfiler::VisitCXXSelectionExpr(const CXXSelectionExpr *S) {
+void StmtProfiler::VisitBuiltinSelectExpr(const BuiltinSelectExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *S) {
+void StmtProfiler::VisitBuiltinSelectMemberExpr(
+                                           const BuiltinSelectMemberExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitCXXSelectPackExpr(const CXXSelectPackExpr *S) {
+void StmtProfiler::VisitBuiltinSelectPackElemExpr(
+                                         const BuiltinSelectPackElemExpr *S) {
   VisitExpr(S);
 }
 

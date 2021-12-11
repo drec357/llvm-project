@@ -236,7 +236,7 @@ public:
 /// a constexpr range.
 class CXXExpansionStmt : public Stmt {
 protected:
-  /// \brief The subexpressions of an expression include the loop variable,
+  /// The subexpressions of an expression include the loop variable,
   /// the tuple or pack being expanded, and the loop body.
   enum {
     LOOP,  ///< The variable bound to each member of the expansion.
@@ -246,62 +246,61 @@ protected:
   };
   Stmt *SubExprs[END];
 
-  /// The template parameter stores the induction variable used to form
-  /// the dependent structure of the loop body.
-  TemplateParameterList *Parms;
+  /// The template parameter list which stores the induction variable
+  /// used to form the dependent structure of the loop body.
+  TemplateParameterList *InductionVarTPL;
 
-  SourceLocation ForLoc;
-  SourceLocation EllipsisLoc;
+  SourceLocation TemplateForLoc;
+  SourceLocation ConstexprLoc;
   SourceLocation ColonLoc;
+  SourceLocation StructLoc;
   SourceLocation RParenLoc;
 
-  /// \brief The expansion size of the range. When the range is dependent
+  /// The expansion size of the range. When the range is dependent
   /// this value is not meaningful.
-  std::size_t Size;
+  size_t NumInstantiatedStmts;
 
-  /// \brief The statements instantiated from the loop body. These are not
+  /// The statements instantiated from the loop body. These are not
   /// sub-expressions.
   Stmt **InstantiatedStmts;
 
   friend class ASTStmtReader;
-public:
 
-  CXXExpansionStmt(StmtClass SC, DeclStmt *LoopVar,
-                   TemplateParameterList *Parms, std::size_t N,
-                   SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL)
-    : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N),
+protected:
+  CXXTemplateForRangeStmt(StmtClass SC, DeclStmt *LoopVar,
+                          TemplateParameterList *InductionVarTPL, size_t N,
+                          SourceLocation TFL, SourceLocation CEL,
+                          SourceLocation CL, SourceLocation SL,
+                          SourceLocation RPL)
+    : Stmt(SC), TemplateForLoc(TFL), ConstexprLoc(CEL),
+      ColonLoc(CL), StructLoc(SL), RParenLoc(RPL), NumInstantiatedStmts(N),
       InstantiatedStmts(nullptr) {
     SubExprs[LOOP] = LoopVar;
     SubExprs[RANGE] = SubExprs[BODY] = nullptr;
   }
 
-  CXXExpansionStmt(StmtClass SC, EmptyShell Empty)
+  CXXTemplateForRangeStmt(StmtClass SC, EmptyShell Empty)
     : Stmt(SC, Empty) {}
 
-  /// Returns the dependent loop variable declaration.
+public:
+  /// Returns the dependent loop variable declaration statement.
   DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
+  void setLoopVarStmt(Stmt *V) { SubExprs[LOOP] = V; }
 
-  /// Get the loop variable.
+  /// Returns the loop variable.
   const VarDecl *getLoopVariable() const;
   VarDecl *getLoopVariable();
 
-  /// Returns the template parameter list of the declaration.
-  TemplateParameterList *getTemplateParameters() { return Parms; }
+  /// Returns the template parameter list storing the induction variable.
+  TemplateParameterList *getInductionVarTPL() { return InductionVarTPL; }
 
-  /// Returns loop induction variable.
+  /// Returns loop induction variable used to form the dependent
+  /// structure of the loop body.
   NonTypeTemplateParmDecl *getInductionVariable();
 
   /// Returns the parsed body of the loop.
-  const Stmt *getBody() const { return SubExprs[BODY]; }
-  Stmt *getBody() { return SubExprs[BODY]; }
-
-  /// Set the body of the loop.
+  Stmt *getBody() const { return SubExprs[BODY]; }
   void setBody(Stmt *S) { SubExprs[BODY] = S; }
-
-  /// Returns the number of instantiated statements.
-  std::size_t getSize() const { return Size; }
-  void setSize(std::size_t N) { Size = N; }
 
   /// Set the sequence of instantiated statements.
   void setInstantiatedStatements(Stmt **S) {
@@ -309,48 +308,214 @@ public:
     InstantiatedStmts = S;
   }
 
-  /// \brief Returns the sequence of instantiated statements.
+  /// Returns the sequence of instantiated statements.
   ArrayRef<Stmt *> getInstantiatedStatements() const {
-    return llvm::makeArrayRef(InstantiatedStmts, Size);
+    return llvm::makeArrayRef(InstantiatedStmts, NumInstantiatedStmts);
   }
 
-  /// \brief Returns a pointer to the first instantiated statement.
+  size_t getNumInstantiatedStatements() const { return NumInstantiatedStmts; }
+
+  /// Returns a pointer to the first instantiated statement.
   Stmt **begin_instantiated_statements() const { return InstantiatedStmts; }
-  /// \brief Returns a pointer past the last instantiated statement.
+  /// Returns a pointer past the last instantiated statement.
   Stmt **end_instantiated_statements() const {
-    return InstantiatedStmts + Size;
+    return InstantiatedStmts + NumInstantiatedStmts;
   }
 
-  SourceLocation getForLoc() const { return ForLoc; }
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  SourceLocation getTemplateForLoc() const { return TemplateForLoc; }
+  SourceLocation getConstexprLoc() const { return ConstexprLoc; }
   SourceLocation getColonLoc() const { return ColonLoc; }
+  SourceLocation getStructLoc() const { return StructLoc; }
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
-  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getBeginLoc() const LLVM_READONLY { return TemplateForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
     if (SubExprs[BODY])
       return SubExprs[BODY]->getEndLoc();
     return RParenLoc;
   }
 
-  // Iterators
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXCompositeExpansionStmtClass ||
-      T->getStmtClass() == CXXPackExpansionStmtClass;
+    return T->getStmtClass() == CXXTemplateForRangeVarStmtClass ||
+           T->getStmtClass() == CXXTemplateForRangePackStmtClass;
   }
 };
 
-class CXXCompositeExpansionStmt : public CXXExpansionStmt {
+/// CXXTemplateForRangeVarStmt - a compile-time expansion over a single
+/// declaration, which may be either a tuple, constant array, range, or,
+/// if the `struct` word was prepended to the range expression, an object
+/// of any class.
+///
+/// - - -
+///
+/// ***Tuples***
+///
+/// An object of  class T is considered a tuple so long as std::get<I>(T t)
+/// and std::tuple_size<T>::value are defined.
+///
+/// \code
+///     template for (auto x : tup) stmt;
+/// \endcode
+///
+/// will expand as:
+/// \code
+///     auto&& __range = tup;
+///     { // expansion-1
+///       auto x = std::get<0>(__range);
+///       stmt_1;
+///     }
+///     { // expansion-2
+///       auto x = std::get<1>(__range);
+///       stmt_2;
+///     }
+///     ... // Up to std::tuple_size_v<decltype(tup)>;
+/// \endcode
+///
+///
+/// And similarly for `template for (constexpr auto x : tup)`.
+///
+/// - - -
+///
+/// ***Ranges***
+///
+/// An object of class T is a "range" if T defines begin() and end()
+/// methods return iterators of type U for which std::next(U, size_t) is
+/// defined.  (Eventually, only a operator++ should be needed; for now,
+/// non-random-access iterators will require quadratic iteration time.)
+///
+/// \code
+///     template for (auto x : range) stmt;
+/// \endcode
+///
+/// will expand as:
+///
+/// \code
+///     constexpr auto&& __range = range;
+///     constexpr auto __begin = begin-expr(__range)
+///     constexpr auto __end = end-expr(__range)
+///     { // expansion-1
+///       constexpr auto x = std::next(__begin, 0);
+///       stmt_1;
+///     }
+///     { // expansion-2
+///       constexpr auto x = std::next(__begin, 1);
+///       stmt_2;
+///     }
+///     ... // Up to std::size(range) or std:distance(range),
+//          // whichever is available.
+/// \endcode
+///
+/// FIXME: Using std::next guarantees quadratic loop performance for
+/// non-random-access iterators. Either pre-compute an array (which is weird)
+/// or build each expansion within a dedicated loop elsewhere.
+///
+/// - - -
+///
+/// ***Arrays***
+/// A object is a considered an "array" if it is a constant array
+/// type and defines an operator[](size_t).
+///
+/// \code
+///     template for (auto x : arr) stmt;
+/// \endcode
+///
+/// will expand as:
+///
+/// \code
+///     { // expansion-1
+///       auto x = arr[0];
+///       stmt_1;
+///     }
+///     { // expansion-2
+///       auto x = arr[1];
+///       stmt_2;
+///     }
+///     ... // Up to std::extent_v<decltype(arr)>.
+/// \endcode
+///
+/// And similarly for constexpr loops.
+///
+/// - - -
+///
+/// ***Classes***
+/// For itertating over a class's accessible fields (as if
+/// they were stored in a tuple), prepend the range variable
+/// name with the struct keyword.
+///
+/// \code
+///     class MyClass {
+///     public:
+///       int i;
+///     private:
+///       char priv;
+///     public:
+///        float f;
+///     } obj;
+///     for constexpr (auto x : struct obj) stmt;
+/// \endcode
+///
+/// will expand as:
+///
+/// \code
+///     constexpr auto&& __range = obj;
+///     { // expansion-1
+///       constexpr auto x = __select(obj, 0); // = obj.i
+///       stmt_1;
+///     }
+///     { // expansion-2
+///       constexpr auto x = __select(obj, 1); // = obj.f
+///       stmt_2;
+///     }
+///     ... // Up to the number of accessible members in the class. (= 2)
+/// \endcode
+///
+/// The range-index is a precomputed list of iterators, maintained internally
+/// by the compiler. The __select intrinsic (BuiltInSelectMemberExpr)
+/// returns the Ith such iterator in the sequence.
+///
+class CXXTemplateForRangeVarStmt final : public CXXTemplateForRangeStmt {
   /// The statement declaring  __begin.
-  Stmt *BeginStmt;
+  Stmt *BeginStmt = nullptr;
 
   /// The statement declaring __end.
-  Stmt *EndStmt;
+  Stmt *EndStmt = nullptr;
+
+  CXXTemplateForRangeVarStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
+                             TemplateParameterList *InductionVarTPL, size_t N,
+                             SourceLocation TFL, SourceLocation CEL,
+                             SourceLocation CL, SourceLocation SL,
+                             SourceLocation RPL)
+    : CXXTemplateForRangeStmt(CXXTemplateForRangeVarStmtClass, LoopVar,
+                              InductionVarTPL, N, TFL, CEL, CL, SL, RPL) {
+    SubExprs[RANGE] = RangeVar;
+  }
+
+  CXXTemplateForRangeVarStmt(EmptyShell Empty)
+    : CXXTemplateForRangeStmt(CXXTemplateForRangeVarStmtClass, Empty) {}
+
 public:
+    static CXXTemplateForRangeVarStmt *Create(
+        ASTContext &Context, DeclStmt *LoopVar, DeclStmt *RangeVar,
+        TemplateParameterList *InductionVarTPL, std::size_t N,
+        SourceLocation TFL, SourceLocation CEL, SourceLocation CL,
+        SourceLocation SL, SourceLocation RPL) {
+    return new (Context) CXXTemplateForRangeVarStmt(
+          LoopVar, RangeVar, InductionVarTPL, N, TFL, CEL, CL, SL, RPL);
+  }
+
+  static CXXTemplateForRangeVarStmt *Create(ASTContext &Context,
+                                            EmptyShell Empty) {
+    return new (Context) CXXTemplateForRangeVarStmt(Empty);
+  }
+
   /// Returns the statement containing the range declaration.
-  Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
+  const DeclStmt *getRangeStmt() const {
+    return cast<DeclStmt>(SubExprs[RANGE]);
+  }
+  DeclStmt *getRangeStmt() { return cast<DeclStmt>(SubExprs[RANGE]); }
+  void setRangeStmt(Stmt *V) { SubExprs[RANGE] = V; }
 
   /// The range variable.
   const VarDecl *getRangeVariable() const;
@@ -360,84 +525,84 @@ public:
   const Expr *getRangeInit() const { return getRangeVariable()->getInit(); }
   Expr *getRangeInit() { return getRangeVariable()->getInit(); }
 
-  /// An expansion over an array, range, tuple, or struct.
-  CXXCompositeExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
-                            TemplateParameterList *Parms,
-                            std::size_t N, SourceLocation FL,
-                            SourceLocation EL, SourceLocation CL,
-                            SourceLocation RPL)
-    : CXXExpansionStmt(CXXCompositeExpansionStmtClass, LoopVar,
-                       Parms, N, FL, EL, CL, RPL) {
-    SubExprs[RANGE] = RangeVar;
-  }
-
-  CXXCompositeExpansionStmt(EmptyShell Empty)
-    : CXXExpansionStmt(CXXCompositeExpansionStmtClass, Empty) {}
-
   /// Accesses the declaration statements of __begin and __end respectively.
   /// These are only relevant for range expansions.
-  Stmt *getBeginStmt() const { return BeginStmt; }
+  const Stmt *getBeginStmt() const { return BeginStmt; }
+  Stmt *getBeginStmt() { return BeginStmt; }
   void setBeginStmt(Stmt *B) { BeginStmt = B; }
-  Stmt *getEndStmt() const { return EndStmt; }
+
+  const Stmt *getEndStmt() const { return EndStmt; }
+  Stmt *getEndStmt() { return EndStmt; }
   void setEndStmt(Stmt *E) { EndStmt = E; }
 
-  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getBeginLoc() const LLVM_READONLY { return TemplateForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
     if (SubExprs[BODY])
       return SubExprs[BODY]->getEndLoc();
     return RParenLoc;
   }
 
-  // Iterators
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXCompositeExpansionStmtClass;
+    return T->getStmtClass() == CXXTemplateForRangeVarStmtClass;
   }
 };
 
-class CXXPackExpansionStmt : public CXXExpansionStmt {
-  // A sizeof... expression. We aren't actually concerned with
-  // the value of this expression: we can use this to determine
-  // whether or not the pack has been expanded yet.
-  SizeOfPackExpr *PackSize = nullptr;
-public:
-  /// An expansion over a parameter pack does not have a range variable,
-  /// but the range itself is still significant, as it contains the pack.
-  CXXPackExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
-                       TemplateParameterList *Parms,
-                       std::size_t N, SourceLocation FL, SourceLocation EL,
-                       SourceLocation CL, SourceLocation RPL)
-    : CXXExpansionStmt(CXXPackExpansionStmtClass, LoopVar, Parms, N,
-                       FL, EL, CL, RPL) {
-      SubExprs[RANGE] = RangeExpr;
-    }
+/// CXXTemplateForRangePackStmt - a compile-time expansion over an
+/// expression pack.
+///
+/// \verbatim
+///   template for (auto x : exprpack) statement
+///   template for (constexpr auto x : exprpack) statement
+/// \endverbatim
+///
+class CXXTemplateForRangePackStmt final : public CXXTemplateForRangeStmt {
 
-  CXXPackExpansionStmt(EmptyShell Empty)
-    : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
+  CXXTemplateForRangePackStmt(DeclStmt *LoopVar, Expr *RangeExpr,
+                         TemplateParameterList *Parms, size_t N,
+                         SourceLocation TFL, SourceLocation CEL,
+                         SourceLocation CL, SourceLocation RPL)
+    : CXXTemplateForRangeStmt(CXXTemplateForRangePackStmtClass, LoopVar, Parms,
+                         N, TFL, CEL, CL, /*StructLoc=*/SourceLocation(), RPL) {
+    SubExprs[RANGE] = RangeExpr;
+  }
+
+  CXXTemplateForRangePackStmt(EmptyShell Empty)
+    : CXXTemplateForRangeStmt(CXXTemplateForRangePackStmtClass, Empty) {}
+
+public:
+  static CXXTemplateForRangePackStmt *Create(
+      ASTContext &Context, DeclStmt *LoopVar, Expr *RangeExpr,
+      TemplateParameterList *InductionVarTPL, std::size_t N,
+      SourceLocation TFL, SourceLocation CEL,
+      SourceLocation CL, SourceLocation RPL) {
+    return new (Context) CXXTemplateForRangePackStmt(
+        LoopVar, RangeExpr, InductionVarTPL, N, TFL, CEL, CL, RPL);
+  }
+  static CXXTemplateForRangePackStmt *Create(ASTContext &Context,
+                                        EmptyShell Empty) {
+    return new (Context) CXXTemplateForRangePackStmt(Empty);
+  }
 
   // Returns the range expression as a statement.
-  Stmt *getRangeExprStmt() const { return SubExprs[RANGE]; }
+  Stmt *getRangeStmt() const { return SubExprs[RANGE]; }
+  void setRangeExprStmt(Stmt *V) { SubExprs[RANGE] = V; }
 
-  /// Returns the range expression.
+  /// Returns the range expression containing the pack.
   Expr *getRangeExpr() const;
 
-  /// Returns the size of the pack being expanded over.
-  SizeOfPackExpr *getPackSize() const { return PackSize; }
-  void setPackSize(SizeOfPackExpr *E) { PackSize = E; }
-
-  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getBeginLoc() const LLVM_READONLY { return TemplateForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
     if (SubExprs[BODY])
       return SubExprs[BODY]->getEndLoc();
     return RParenLoc;
   }
 
-  // Iterators
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXPackExpansionStmtClass;
+    return T->getStmtClass() == CXXTemplateForRangePackStmtClass;
   }
 };
 

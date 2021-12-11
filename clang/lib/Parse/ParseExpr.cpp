@@ -1473,8 +1473,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseSYCLUniqueStableNameExpression();
     break;
 
-  case tok::kw___select_member:
-    Res = ParseCXXSelectMemberExpr();
+  case tok::kw___select:
+    Res = ParseBuiltinSelectExpr();
     break;
 
   case tok::annot_typename:

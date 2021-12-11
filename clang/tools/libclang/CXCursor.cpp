@@ -284,8 +284,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     K = CXCursor_SEHFinallyStmt;
     break;
 
-  case Stmt::CXXCompositeExpansionStmtClass:
-  case Stmt::CXXPackExpansionStmtClass:
+  case Stmt::CXXTemplateForRangeVarStmtClass:
+  case Stmt::CXXTemplateForRangePackStmtClass:
     // FIXME: These should be exposed.
     K = CXCursor_UnexposedStmt;
     break;
@@ -314,8 +314,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXDefaultInitExprClass:
   case Stmt::CXXFoldExprClass:
   case Stmt::CXXRewrittenBinaryOperatorClass:
-  case Stmt::CXXSelectMemberExprClass:
-  case Stmt::CXXSelectPackExprClass:
+  case Stmt::BuiltinSelectMemberExprClass:
+  case Stmt::BuiltinSelectPackElemExprClass:
   case Stmt::CXXStdInitializerListExprClass:
   case Stmt::CXXScalarValueInitExprClass:
   case Stmt::CXXUuidofExprClass:

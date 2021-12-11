@@ -1742,3 +1742,33 @@ CUDAKernelCallExpr *CUDAKernelCallExpr::CreateEmpty(const ASTContext &Ctx,
                            alignof(CUDAKernelCallExpr));
   return new (Mem) CUDAKernelCallExpr(NumArgs, HasFPFeatures, Empty);
 }
+
+BuiltinSelectMemberExpr *
+BuiltinSelectMemberExpr::Create(ASTContext &Context, SourceLocation SelectLoc,
+                                DeclRefExpr *RangeDRE, Expr *Index,
+                                int NumFieldsInRange,
+                                MemberExpr *SubstituteME) {
+  QualType T = SubstituteME ? SubstituteME->getType() : Context.DependentTy;
+  return new (Context) BuiltinSelectMemberExpr(
+      T, SelectLoc, RangeDRE, Index, NumFieldsInRange, SubstituteME);
+}
+
+BuiltinSelectMemberExpr *
+BuiltinSelectMemberExpr::Create(ASTContext &Context, EmptyShell Empty) {
+  return new (Context) BuiltinSelectMemberExpr(Empty);
+}
+
+BuiltinSelectPackElemExpr *
+BuiltinSelectPackElemExpr::Create(ASTContext &Context, SourceLocation SelectLoc,
+                                  Expr *RangeFPPE_or_NTTPE,
+                                  Expr *Index, DeclRefExpr *SubstituteDRE) {
+  QualType T = SubstituteDRE ? SubstituteDRE->getType() : Context.DependentTy;
+  return new (Context) BuiltinSelectPackElemExpr(
+      T, SelectLoc, RangeFPPE_or_NTTPE, Index, SubstituteDRE);
+}
+
+BuiltinSelectPackElemExpr *
+BuiltinSelectPackElemExpr::Create(ASTContext &Context,
+                                  EmptyShell Empty) {
+  return new (Context) BuiltinSelectPackElemExpr(Empty);
+}

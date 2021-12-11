@@ -860,17 +860,22 @@ void ASTStmtWriter::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   Code = serialization::EXPR_OMP_ITERATOR;
 }
 
-void ASTStmtWriter::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
-  // FIXME: Implement me.
-  assert(false);
+void ASTStmtWriter::VisitBuiltinSelectExpr(BuiltinSelectExpr *E) {
+  VisitExpr(E);
+  Record.AddSourceLocation(E->getSelectLoc());
+  Record.AddStmt(E->getRangeExpr());
+  Record.AddStmt(E->getIndexExpr());
+  Record.AddStmt(E->getSubstituteExpr());
 }
 
-void ASTStmtWriter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
-  VisitExpr(E);
+void ASTStmtWriter::VisitBuiltinSelectMemberExpr(BuiltinSelectMemberExpr *E) {
+  VisitBuiltinSelectExpr(E);
+  Record.push_back(E->getNumFieldsInRange());
 }
 
-void ASTStmtWriter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
-  VisitExpr(E);
+void ASTStmtWriter::VisitBuiltinSelectPackElemExpr(
+                                               BuiltinSelectPackElemExpr *E) {
+  VisitBuiltinSelectExpr(E);
 }
 
 void ASTStmtWriter::VisitCallExpr(CallExpr *E) {
@@ -1571,16 +1576,31 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Code = serialization::STMT_CXX_FOR_RANGE;
 }
 
-void ASTStmtWriter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+void ASTStmtWriter::VisitCXXTemplateForRangeStmt(CXXTemplateForRangeStmt *S) {
   VisitStmt(S);
-  // FIXME: Implement me.
+  Record.AddSourceLocation(S->getTemplateForLoc());
+  Record.AddSourceLocation(S->getConstexprLoc());
+  Record.AddSourceLocation(S->getColonLoc());
+  Record.AddSourceLocation(S->getStructLoc());
+  Record.AddSourceLocation(S->getRParenLoc());
+  Record.AddTemplateParameterList(S->getInductionVarTPL());
+  Record.AddStmt(S->getLoopVarStmt());
+  Record.AddStmt(S->getBody());
+}
+
+void ASTStmtWriter::VisitCXXTemplateForRangeVarStmt(
+                                              CXXTemplateForRangeVarStmt *S) {
+  VisitCXXTemplateForRangeStmt(S);
+  Record.AddStmt(S->getRangeStmt());
+  Record.AddStmt(S->getBeginStmt());
+  Record.AddStmt(S->getEndStmt());
   Code = serialization::STMT_CXX_PACK_EXPANSION;
 }
 
-void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
-                                                 CXXCompositeExpansionStmt *S) {
-  VisitStmt(S);
-  // FIXME: Implement me.
+void ASTStmtWriter::VisitCXXTemplateForRangePackStmt(
+                                             CXXTemplateForRangePackStmt *S) {
+  VisitCXXTemplateForRangeStmt(S);
+  Record.AddStmt(S->getRangeStmt());
   Code = serialization::STMT_CXX_COMP_EXPANSION;
 }
 

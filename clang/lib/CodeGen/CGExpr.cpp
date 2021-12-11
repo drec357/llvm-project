@@ -1379,10 +1379,10 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitMatrixSubscriptExpr(cast<MatrixSubscriptExpr>(E));
   case Expr::OMPArraySectionExprClass:
     return EmitOMPArraySectionExpr(cast<OMPArraySectionExpr>(E));
-  case Expr::CXXSelectMemberExprClass:
-    return EmitCXXSelectMemberExpr(cast<CXXSelectMemberExpr>(E));
-  case Expr::CXXSelectPackExprClass:
-    return EmitCXXSelectPackExpr(cast<CXXSelectPackExpr>(E));
+  case Expr::BuiltinSelectMemberExprClass:
+    return EmitBuiltinSelectMemberExpr(cast<BuiltinSelectMemberExpr>(E));
+  case Expr::BuiltinSelectPackElemExprClass:
+    return EmitBuiltinSelectPackElemExpr(cast<BuiltinSelectPackElemExpr>(E));
   case Expr::ExtVectorElementExprClass:
     return EmitExtVectorElementExpr(cast<ExtVectorElementExpr>(E));
   case Expr::MemberExprClass:

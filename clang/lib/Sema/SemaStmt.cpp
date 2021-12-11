@@ -3055,13 +3055,24 @@ namespace {
 
 struct SuppressDiagnostics
 {
-  SuppressDiagnostics(Sema &SemaRef)
+  SuppressDiagnostics(Sema &SemaRef, bool Val)
     : SemaRef(SemaRef), Saved(SemaRef.Diags.getSuppressAllDiagnostics()) {
-    SemaRef.Diags.setSuppressAllDiagnostics(true);
+    if (Saved == Val)
+      Exited = true;
+    else
+      SemaRef.Diags.setSuppressAllDiagnostics(Val);
   }
   ~SuppressDiagnostics() {
-    SemaRef.Diags.setSuppressAllDiagnostics(Saved);
+    Exit();
   }
+  void Exit() {
+    if (!Exited) {
+      SemaRef.Diags.setSuppressAllDiagnostics(Saved);
+      Exited = true;
+    }
+  }
+private:
+  bool Exited;
   Sema &SemaRef;
   bool Saved;
 };
@@ -3076,11 +3087,8 @@ struct SuppressDiagnostics
 /// returns  c true if the expression can be evaluated, c false otherwise.
 ///          If c true, p Size is set to the number of elements in the tuple.
 static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
-                         llvm::APSInt &Size) {
-  // FIXME: This is an overly strong way to suppress diagnostics during
-  // this analysis, but nothing else seems to work. RequireCompleteType
-  // is diagnosing instantiation errors.
-  SuppressDiagnostics Suppress(SemaRef);
+                         llvm::APSInt &Size, bool Diagnose) {
+  SuppressDiagnostics MaybeSuppress(SemaRef, !Diagnose);
 
   NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
   IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
@@ -3088,7 +3096,10 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   SemaRef.LookupQualifiedName(SizeLookup, Std);
   ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
   if (!TupleSize) {
-    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
+    if (Diagnose) {
+      MaybeSuppress.Exit();
+      SemaRef.Diag(Loc, diag::note_no_member) << SizeName << Std;
+    }
     return false;
   }
 
@@ -3102,8 +3113,13 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   TempArgs.addArgument(ArgLoc);
   QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
 
-  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
+  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type)) {
+    if (Diagnose) {
+      MaybeSuppress.Exit();
+      SemaRef.Diag(Loc, diag::note_incomplete_type) << SpecType;
+    }
     return false;
+  }
   CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
 
   // Lookup the the '::value' member in the specifier.
@@ -3112,7 +3128,10 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   SemaRef.LookupQualifiedName(ValueLookup, Spec);
   VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
   if (!Value) {
-    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
+    if (Diagnose) {
+      MaybeSuppress.Exit();
+      SemaRef.Diag(Loc, diag::note_no_member) << ValueName << Spec;
+    }
     return false;
   }
 
@@ -3126,8 +3145,10 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
 
   Expr::EvalResult Result;
   if (!Ref.get()->EvaluateAsInt(Result, SemaRef.Context)) {
-    // FIXME: This is probably not the right error.
-    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
+    if (Diagnose) {
+      MaybeSuppress.Exit();
+      SemaRef.Diag(Loc, diag::note_no_member) << ValueName << Spec;
+    }
     return false;
   }
   Size = Result.Val.getInt();
@@ -3202,7 +3223,7 @@ struct ExpansionStatementBuilder
   ///
   /// FIXME: Detect constexpr-ness from the loop var.
   ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
-                            Stmt *LoopVarDS, Stmt *RangeVarDS,
+                            Stmt *LoopVarDS, DeclStmt *RangeVarDS,
                             bool IsConstexpr);
 
   /// Construct a range without a body, using minimal information.
@@ -3240,14 +3261,14 @@ struct ExpansionStatementBuilder
   StmtResult BuildExpansionOverArray();
 
   /// Build the expansion over a tuple.
-  StmtResult BuildExpansionOverTuple();
+  StmtResult BuildExpansionOverTuple(bool Diagnose);
 
   /// Build the expansion over a constexpr range.
   /// \param Determine if the body will be instantiated or not.
-  StmtResult BuildExpansionOverRange();
+  StmtResult BuildExpansionOverRange(bool Diagnose);
 
   /// Build the expansion over a destructurable class.
-  StmtResult BuildExpansionOverClass();
+  StmtResult BuildExpansionOverStruct();
 
   /// Used by Build() to push the expansion context just before returning.
   StmtResult Finish(StmtResult S) {
@@ -3279,13 +3300,16 @@ struct ExpansionStatementBuilder
   /// expression 'y'. This also becomes the initializer of the range variable.
   Expr *RangeExpr;
 
-  /// True if this is a constexpr expansion.
+  /// True if this is a constexpr expansion.  For now this simply
+  /// indicates if !ConstexprLoc.isInvalid(), but we may later
+  /// infer the constexpr-ness even when it is not marked.
   bool IsConstexpr;
 
   // Source locations
-  SourceLocation ForLoc;
-  SourceLocation AnnotationLoc; // constexpr or ...
+  SourceLocation TemplateForLoc;
+  SourceLocation ConstexprLoc;
   SourceLocation ColonLoc;
+  SourceLocation StructLoc;
   SourceLocation RParenLoc;
 
   // Computed values.
@@ -3302,11 +3326,12 @@ struct ExpansionStatementBuilder
   /// A reference to the range variable.
   DeclRefExpr *RangeRef;
 
-  /// The statement declaring the range variable.
-  DeclStmt *RangeDeclStmt = nullptr;
+  /// The DeclStmt declaring the range variable.
+  DeclStmt *RangeVarDS = nullptr;
 
-  /// The template parameter list for the induction variable.
-  TemplateParameterList *TemplateParms = nullptr;
+  /// The template parameter list storing the induction variable
+  /// used to form the dependent structure of the loop body.
+  TemplateParameterList *InductionVarTPL = nullptr;
 
   /// The induction variable is an integer template parameter used to compute
   /// the nth value of an expanded statement.
@@ -3359,7 +3384,7 @@ ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
 
 ExpansionStatementBuilder::
 ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
-                          Stmt *LoopVarDS, Stmt *RangeVarDS,
+                          Stmt *LoopVarDS, DeclStmt *RangeVarDS,
                           bool IsConstexpr)
   : SemaRef(S), CurScope(S.getCurScope()), Kind(K),
     LoopDeclStmt(cast<DeclStmt>(LoopVarDS)), RangeExpr(),
@@ -3368,8 +3393,8 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
 
   // Unpack the Range statement into its various parts.
-  RangeDeclStmt = cast<DeclStmt>(RangeVarDS);
-  RangeVar = cast<VarDecl>(RangeDeclStmt->getSingleDecl());
+  RangeVarDS = cast<DeclStmt>(RangeVarDS);
+  RangeVar = cast<VarDecl>(RangeVarDS->getSingleDecl());
   if (RangeVar->isInvalidDecl()) {
     LoopVar->setInvalidDecl(true);
     return;
@@ -3388,8 +3413,8 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
                           Stmt *LoopVarDS, Expr *RangeExpr,
                           bool IsConstexpr)
   : SemaRef(S), Kind(K), LoopDeclStmt(cast<DeclStmt>(LoopVarDS)),
-    RangeExpr(RangeExpr), IsConstexpr(IsConstexpr), ForLoc(), AnnotationLoc(),
-    ColonLoc(), RParenLoc() {
+    RangeExpr(RangeExpr), IsConstexpr(IsConstexpr), TemplateForLoc(),
+    ConstexprLoc(), ColonLoc(), RParenLoc() {
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
 
   SourceLocation Loc;
@@ -3409,7 +3434,7 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
                                       Loc, Loc, N);
   }
 
-  RangeDeclStmt = nullptr;
+  RangeVarDS = nullptr;
   RangeVar = nullptr;
   RangeRef = nullptr;
 }
@@ -3418,8 +3443,8 @@ ExpansionStatementBuilder::
 ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
                           Expr *RangeExpr)
   : SemaRef(S), CurScope(CS), Kind(K),
-    RangeExpr(RangeExpr), IsConstexpr(true), ForLoc(), AnnotationLoc(),
-    ColonLoc(), RParenLoc()
+    RangeExpr(RangeExpr), IsConstexpr(true), TemplateForLoc(),
+    ConstexprLoc(), ColonLoc(), RParenLoc()
 {
 }
 
@@ -3447,50 +3472,57 @@ ExpansionStatementBuilder::Build()
     return StmtError();
   FinishRangeVar();
 
-  // The order in which we determine the expansion style must follow
-  // the order in which structured bindings proceeds. That is:
-  //
-  // 1. Arrays (detected by type)
-  // 2. Tuples (detected by presence of std::tuple_size)
-  // 3. Constexpr ranges (this is new)
-  // 3. Classes (destructured)
-  //
-  // I think we need (want?) to insert ranges before classes although
-  // range expansion only works when constexpr is true.
-
   // Do not attempt to build an expansion over a dependent range.
   // If the range is type dependent, then we don't know which of the
   // cases above match.
   // If the range is value dependent, then we'll be unsuccessful in
   // our attempt to build the valid expansion. Length will be non-computable.
+  // If that doesn't succeed, try with a destructurable class.
   if (RangeType->isDependentType() || RangeVar->getInit()->isValueDependent())
+    // This will never fail
     return Finish(BuildDependentExpansion());
 
-  // Explicitly build this for array types.
-  if (RangeType->isConstantArrayType())
+  // If this was written template for (auto x : obj struct),
+  // treat this as an expansion over the accessible fields of obj.
+  if (StructLoc.isValid())
+    return Finish(BuildExpansionOverStruct());
+
+  // First we'll try to interpret the range variable as an array type.
+  // If this is constexpr, it is possible a pointer could refer to
+  // an array type; we'll handle that case in BuildExpansionOverArray.
+  if (RangeType->isConstantArrayType() ||
+      (IsConstexpr && RangeType->isPointerType()))
     return Finish(BuildExpansionOverArray());
 
-  StmtResult ForStmt;
+  // The range is not a pack nor an array.
+  // If it is a class, it may be a tuple or a range.
+  if (RangeType->isRecordType()) {
+    StmtResult ForStmt;
 
-  // Try building a tuple expansion.
-  // FIXME: Disabled for variadic reifiers.
-  ForStmt = BuildExpansionOverTuple();
-  if (!ForStmt.isInvalid())
-    return Finish(ForStmt);
+    // Try interpreting the RangeExpr as a tuple.
+    // Do not add diagnostic notes if it doesn't succeed;
+    // we will do that below after exhausting other options.
+    ForStmt = BuildExpansionOverTuple(/*Diagnose=*/false);
+    if (!ForStmt.isInvalid())
+      return Finish(ForStmt);
 
-  // If that doesn't succeed, try with a constexpr range.
-  ForStmt = BuildExpansionOverRange();
-  if (!ForStmt.isInvalid())
-    return Finish(ForStmt);
+    // The RangeExpr is not a tuple.  Now try interpreting it as
+    // an array.
+    // *Do* add diagnostic notes if this fails, since this is the last one.
+    ForStmt = BuildExpansionOverRange(/*Diagnose=*/true);
+    if (!ForStmt.isInvalid())
+      return Finish(ForStmt);
 
-  // If that doesn't succeed, try with a destructurable class.
-  ForStmt = BuildExpansionOverClass();
-  if (!ForStmt.isInvalid())
-    return Finish(ForStmt);
+    // Now run BuildExpansionOverTuple one more time, to
+    // add diagnostic notes about why we could not interpret
+    // RangeExpr as a tuple.
+    ForStmt = BuildExpansionOverTuple(/*Diagnose=*/true);
+    assert(ForStmt.isInvalid());
+  }
 
   SemaRef.Diag(RangeExpr->getExprLoc(),
-               diag::err_expansion_range_type_not_supported);
-  // FIXME: Diagnose this error.
+               diag::err_templatefor_range_var_not_expandable)
+      << RangeType;
   return StmtError();
 }
 
@@ -3504,24 +3536,42 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  // We want to create a copy of the range variable if this is a constexpr
-  // expansion statement, but otherwise we'll just use an rvalue reference.
-  RangeType = IsConstexpr ? SemaRef.Context.getAutoDeductType() :
-    SemaRef.Context.getAutoRRefDeductType();
-
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
-  RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
+  auto SetupRangeVarDecl = [&]() -> bool {
+    RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
+    if (IsConstexpr) {
+      RangeVar->setConstexpr(true);
+      RangeVar->setType(RangeType = RangeType.withConst());
+      // FIXME try deleting below
+      QualType UpdatedSourceTy = RangeVar->getTypeSourceInfo()->getType().withConst();
+      RangeVar->getTypeSourceInfo()->overrideType(UpdatedSourceTy);
+    }
+    return !FinishForRangeVarDecl(SemaRef, RangeVar, RangeExpr, RangeLoc,
+                                  diag::err_for_range_deduction_failure)
+        && !SemaRef.Diags.hasErrorOccurred(); //false on non-fatal errors too
+  };
 
-  if (IsConstexpr) {
-    RangeVar->setConstexpr(true);
-    RangeVar->setType(RangeType = RangeType.withConst());
-  }
-
-  if (FinishForRangeVarDecl(SemaRef, RangeVar, RangeExpr, RangeLoc,
-                            diag::err_for_range_deduction_failure)) {
+  RangeType = IsConstexpr ? SemaRef.Context.getAutoDeductType() :
+                          SemaRef.Context.getAutoRRefDeductType();
+  if (!SetupRangeVarDecl()) {
     LoopVar->setInvalidDecl();
     return false;
   }
+
+
+//  if (!SetupRangeVarDecl() && IsConstexpr) {
+//    // We encountered an error, very likely an
+//    // inability to constant-evaluate the range var's
+//    // initializer.
+//    // Try an lvalue; it sometimes resolves an error.
+//    RangeType = SemaRef.Context.getAutoDeductType();
+//    if (!SetupRangeVarDecl()) {
+//      // No luck.  Return before instantiating so
+//      // the error does not multiply.
+//      LoopVar->setInvalidDecl();
+//      return false;
+//    }
+//  }
 
   // Update the range's expression type.
   RangeType = RangeVar->getType().getNonReferenceType();
@@ -3543,7 +3593,7 @@ ExpansionStatementBuilder::BuildRangeVar()
     LoopVar->setInvalidDecl();
     return false;
   }
-  RangeDeclStmt = cast<DeclStmt>(RangeDecl.get());
+  RangeVarDS = cast<DeclStmt>(RangeDecl.get());
 
   return true;
 }
@@ -3590,7 +3640,7 @@ ExpansionStatementBuilder::BuildInductionVar()
 {
   int Depth = NewTemplateParameterDepth(SemaRef.CurContext);
   IdentifierInfo *ParmName = &SemaRef.Context.Idents.get("__N");
-  const QualType ParmTy = SemaRef.Context.getSizeType();
+  const QualType ParmTy = SemaRef.Context.getSizeType().withConst();
   TypeSourceInfo *ParmTI =
       SemaRef.Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
   NonTypeTemplateParmDecl *Parm =
@@ -3600,7 +3650,7 @@ ExpansionStatementBuilder::BuildInductionVar()
                                       /*Position=*/0, ParmName, ParmTy, false,
                                       ParmTI);
   NamedDecl *Parms[] = {Parm};
-  TemplateParms =
+  InductionVarTPL =
       TemplateParameterList::Create(SemaRef.Context, ColonLoc, ColonLoc, Parms,
                                     ColonLoc, nullptr);
 
@@ -3624,18 +3674,18 @@ ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
   // dependent. We can use this information to avoid problems during semantic
   // analysis of the body.
   if (!PackExpansion)
-    return new (SemaRef.Context) CXXCompositeExpansionStmt(
-      LoopDeclStmt, RangeDeclStmt, TemplateParms, /*Size=*/-1,
-      ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
-  return new (SemaRef.Context) CXXPackExpansionStmt(
-    LoopDeclStmt, RangeExpr, TemplateParms, /*Size=*/-1,
-    ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
+    return CXXTemplateForRangeVarStmt::Create(
+        SemaRef.Context, LoopDeclStmt, RangeVarDS, InductionVarTPL, /*N*/0,
+        TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
+  return CXXTemplateForRangePackStmt::Create(
+      SemaRef.Context, LoopDeclStmt, RangeExpr, InductionVarTPL, /*N*/0,
+      TemplateForLoc, ConstexprLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
 /// the expansion over each element in the expanded pack. For example:
 ///
-///     for... (auto x : pack) stmt;
+///     template for (auto x : pack) stmt;
 ///
 /// will expand as:
 ///
@@ -3662,8 +3712,8 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
 {
   // Substitute any 'auto's in the loop variable as 'dependent auto'. We'll
   // fill them in properly when we instantiate the loop.
-  // Normally this is done in FinishRangeVar(), but we don't have a RangeVar
-  // to finish.
+  // This duplicates code done in FinishRangeVar(), but in this case
+  // we don't have a RangeVar to finish.
   if (!LoopVar->isInvalidDecl() && Kind != Sema::BFRK_Check) {
     QualType SubstType = SemaRef.SubstAutoType(LoopVar->getType(),
                                                SemaRef.Context.DependentTy);
@@ -3672,32 +3722,37 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
 
   // If we can't get a size, we're still dependent.
   if (PackSize->isValueDependent()) {
+    LoopVar->setType(SemaRef.Context.DependentTy);
     return BuildDependentExpansion(/*PackExpansion=*/true);
   }
 
   std::size_t Size;
-  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
+  if (auto *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
     Size = FPPE->getNumExpansions();
-  else
-    llvm_unreachable("Unimplemented pack expansion!\n");
+  else if (auto *NTTPE = dyn_cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr)){
+    Size = NTTPE->getArgumentPack().pack_elements().size();
+  } else
+    llvm_unreachable("Unimplemented pack kind\n");
 
   ExprResult PackAccessor =
-    SemaRef.ActOnCXXSelectPackExpr(RangeExpr, InductionRef);
+    SemaRef.ActOnBuiltinSelectPackElemExpr(/*SelectLoc=*/SourceLocation(),
+                                           RangeExpr, /*Index=*/InductionRef);
   if (PackAccessor.isInvalid())
     return StmtError();
+  assert(PackAccessor.get()->isValueDependent());
 
   SemaRef.AddInitializerToDecl(LoopVar, PackAccessor.get(), false);
   if (LoopVar->isInvalidDecl())
     return StmtError();
 
-  return new (SemaRef.Context)
-    CXXPackExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, Size,
-                         ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
+  return CXXTemplateForRangePackStmt::Create(
+      SemaRef.Context, LoopDeclStmt, RangeExpr, InductionVarTPL, Size,
+      TemplateForLoc, ConstexprLoc, ColonLoc, RParenLoc);
 }
 
-/// When range-expr denotes an array, expand over the elements of the array.
+/// ---Arrays---
 ///
-///     for... (auto x : arr) stmt;
+///     template for (auto x : arr) stmt;
 ///
 /// will expand as:
 ///
@@ -3732,17 +3787,37 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
     return StmtError();
 
   // Pre-compute the array size.
-  ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(RangeType);
+  const ConstantArrayType *ArrayTy =
+      SemaRef.Context.getAsConstantArrayType(RangeType);
+  // DWR FIXME try commenting this out, seeing if that breaks tests
+  if (!ArrayTy) {
+    assert(IsConstexpr && RangeType->isPointerType() &&
+           "Expected this to be checked before calling"); //sanity
+    // Hack: in constexpr contexts the type will be a pointer, due to
+    // BuildRangeVar not using an rvalue type.  But, we might be able to
+    // fetch the array size from the initializer of the range declaration.
+    VarDecl *RangeDecl = cast<VarDecl>(RangeRef->getDecl());
+    if (RangeDecl->getInit()) {
+      RangeType = RangeDecl->getInit()->IgnoreImpCasts()->getType();
+      ArrayTy = SemaRef.Context.getAsConstantArrayType(RangeType);
+    }
+    if (!ArrayTy) {
+      SemaRef.Diag(RangeExpr->getExprLoc(),
+                 diag::err_templatefor_range_var_not_expandable)
+        << RangeType;
+      return StmtError();
+    }
+  }
   llvm::APSInt Size(ArrayTy->getSize(), true);
 
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
-    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc);
+  return CXXTemplateForRangeVarStmt::Create(SemaRef.Context,
+      LoopDeclStmt, RangeVarDS, InductionVarTPL, Size.getExtValue(),
+      TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
 }
 
-/// When range-expr denotes an tuple, expand over the elements of the array.
+/// ---Tuples---
 ///
-///     for... (auto x : tup) stmt;
+///     template for (auto x : tup) stmt;
 ///
 /// will expand as:
 ///
@@ -3760,10 +3835,10 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
 ///
 /// And similarly for constexpr loops.
 ///
-/// If lookup or instantiation of std::tuple_size_v fail, then they do
+/// If lookup or instantiation of std::tuple_size_v fail, then they do so
 /// silently (as if in a SFINAE trap).
 StmtResult
-ExpansionStatementBuilder::BuildExpansionOverTuple()
+ExpansionStatementBuilder::BuildExpansionOverTuple(bool Diagnose)
 {
   /// Build the template argument list for get<N>.
   TemplateArgument Arg(InductionRef);
@@ -3771,42 +3846,88 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
   TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
   TempArgs.addArgument(ArgLoc);
-
-  // FIXME: If the NNS::get fails, should we fall back to std::get?
-
-  // Build the dependent expression 'NNS::get<__N>(__tuple)' where 'NNS' is
-  // the nested name specifier denoting the scope in which the '__tuple' type
-  // is defined.
-  // Get the name information for 'NNS::get'.
+  
   CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
   if (!RangeClass)
     return StmtError();
   NestedNameSpecifierLoc NNS =
       GetQualifiedNameForDecl(SemaRef.Context, RangeClass, ColonLoc);
-  IdentifierInfo *Name = &SemaRef.Context.Idents.get("get");
-  DeclarationNameInfo DNI(Name, ColonLoc);
 
-  // Do an initial lookup for 'NNS::get' where 'NNS' is the declaration
-  // context of the range type.
-  LookupResult R(SemaRef, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
-  // For now just fail if we can't find a get function, this is probably not a
-  // tuple.
-  if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext()))
-    return StmtError();
+  UnresolvedLookupExpr *Fn;
+  bool PassObjToGet = true;
+  
+  // First attempt: look up "__get<I>()" as a member method template of
+  // the RangeClass.  Do not note if this does not succeed, as it is reserved 
+  // for e.g. implementation of reflection features and we shouldn't trouble
+  // users with a weird note.
+  IdentifierInfo *NameOfGet = &SemaRef.Context.Idents.get("__get");
+  DeclarationNameInfo DNI(NameOfGet, ColonLoc);
+  LookupResult R(SemaRef, DNI.getName(), ColonLoc,
+                      Sema::LookupOrdinaryName);
 
+  if (SemaRef.LookupQualifiedName(R, RangeClass)) {
+    // We found __get.  Assume it is a nullary method.
+    PassObjToGet = false;
+  } else {
+    if (Diagnose)
+      SemaRef.Diag(ColonLoc, diag::note_no_member)
+          << NameOfGet << RangeClass;
+    // Next try 'NNS::get<__N>(__tuple)' where 'NNS' is the nested name
+    // specifier denoting the context in which the '__tuple' type is defined.
+    NameOfGet = &SemaRef.Context.Idents.get("get");
+    DNI = DeclarationNameInfo(NameOfGet, ColonLoc);
+    R = LookupResult(SemaRef, DNI.getName(), ColonLoc,
+                     Sema::LookupOrdinaryName);
+
+    if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext())) {
+      if (Diagnose)
+        SemaRef.Diag(ColonLoc, diag::note_no_member)
+            << NameOfGet << RangeClass->getParent();
+      // Neither a "__get" member nor a "get" sibling declaration of
+      // RangeClass were found.  Try looking up std::get if we have not
+      // already.
+      if (RangeClass->getDeclContext()->isStdNamespace())
+        return StmtError();
+      else {
+        R = LookupResult(SemaRef, DNI.getName(), ColonLoc,
+                         Sema::LookupOrdinaryName);
+        NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
+        if (!SemaRef.LookupQualifiedName(R, Std)) {
+          if (Diagnose)
+            SemaRef.Diag(ColonLoc, diag::note_no_member)
+                << NameOfGet << Std;
+          return StmtError();
+        }
+      }
+    }
+  }
   const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
 
-  // Build the lookup expression 'NNS::get<I>'.
-  UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
-    SemaRef.Context,
-    /*NamingClass=*/nullptr, NNS,
-    /*TemplateKWLoc=*/SourceLocation(), DNI,
-    /*NeedsADL=*/false, &TempArgs, FoundNames.begin(), FoundNames.end());
+  // Build the lookup expression '__get<I>' or 'get<I>'.
+  Fn = UnresolvedLookupExpr::Create(
+      SemaRef.Context,
+      /*NamingClass=*/nullptr, NNS,
+      /*TemplateKWLoc=*/SourceLocation(), DNI,
+      /*NeedsADL=*/false, &TempArgs, FoundNames.begin(), FoundNames.end());
 
-  // Build the actual call expression 'NNS::get<I>(__tuple)'.
-  Expr *Args[] = {RangeRef};
-  ExprResult RangeAccessor =
-    SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc, Args, ColonLoc);
+  // Build the dependent call expression 'get<I>(__tuple)' or __get<I>()
+  ExprResult RangeAccessor;
+  if (PassObjToGet) {
+    ExprResult RangeRef =
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType,
+                               VK_LValue, ColonLoc);
+    if (RangeRef.isInvalid())
+      return StmtError();
+    Expr *Args[] = {RangeRef.get()};
+    RangeAccessor =
+        SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc,
+                              Args, ColonLoc);
+  } else {
+    RangeAccessor =
+        SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc,
+                              MutableArrayRef<Expr*>(), //empty
+                              ColonLoc);
+  }
 
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, RangeAccessor.get(), false);
@@ -3815,17 +3936,17 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
 
   // Get the tuple size for the number of expansions.
   llvm::APSInt Size;
-  if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
+  if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size, Diagnose))
     return StmtError();
 
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
-    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc);
+  return CXXTemplateForRangeVarStmt::Create(SemaRef.Context,
+      LoopDeclStmt, RangeVarDS, InductionVarTPL, Size.getExtValue(),
+      TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
 }
 
-/// When range-expr denotes an array, expand over the elements of the array.
+/// ---Ranges---
 ///
-///     for constexpr (auto x : range) stmt;
+///     template for (auto x : range) stmt;
 ///
 /// will expand as:
 ///
@@ -3847,7 +3968,7 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
 /// non-random-access iterators. Either pre-compute an array (which is weird)
 /// or build each expansion within a dedicated loop elsewhere.
 StmtResult
-ExpansionStatementBuilder::BuildExpansionOverRange()
+ExpansionStatementBuilder::BuildExpansionOverRange(bool Diagnose)
 {
   QualType AutoType = SemaRef.Context.getAutoDeductType();
 
@@ -3879,6 +4000,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   StmtResult BeginDecl = SemaRef.ActOnDeclStmt(BeginGroup, ColonLoc, ColonLoc);
   if (BeginDecl.isInvalid())
     return StmtError();
+  assert(isa<DeclStmt>(BeginDecl.get()));
 
   Sema::DeclGroupPtrTy EndGroup =
   SemaRef.BuildDeclaratorGroup(
@@ -3886,6 +4008,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   StmtResult EndDecl = SemaRef.ActOnDeclStmt(EndGroup, ColonLoc, ColonLoc);
   if (EndDecl.isInvalid())
     return StmtError();
+  assert(isa<DeclStmt>(EndDecl.get()));
 
   // Used below.
   NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
@@ -3949,10 +4072,18 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   DeclarationNameInfo NextNameInfo(
       &SemaRef.Context.Idents.get("next"), ColonLoc);
   LookupResult NextCallLookup(SemaRef, NextNameInfo, Sema::LookupOrdinaryName);
-  if (!SemaRef.LookupQualifiedName(NextCallLookup, Std))
+  if (!SemaRef.LookupQualifiedName(NextCallLookup, Std)) {
+    if (Diagnose)
+      SemaRef.Diag(ColonLoc, diag::note_no_member)
+          << NextNameInfo.getName() << Std;
     return StmtError();
-  if (NextCallLookup.getResultKind() != LookupResult::FoundOverloaded)
+  }
+  if (NextCallLookup.getResultKind() != LookupResult::FoundOverloaded) {
+    if (Diagnose)
+      SemaRef.Diag(NextCallLookup.begin().getDecl()->getLocation(),
+                   diag::note_not_overloaded_function);
     return StmtError();
+  }
 
   UnresolvedLookupExpr *NextFn =
     UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
@@ -3983,13 +4114,15 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 
   // If the range is a class, search for a nested size member.
   Expr *CountCall = nullptr;
-  if (CXXRecordDecl *Class = RangeType->getAsCXXRecordDecl()) {
-    DeclarationNameInfo SizeNameInfo(
+  bool FoundSizeMember = false;
+  DeclarationNameInfo SizeNameInfo(
         &SemaRef.Context.Idents.get("size"), ColonLoc);
+  if (CXXRecordDecl *Class = RangeType->getAsCXXRecordDecl()) {
     LookupResult SizeMemberLookup(
         SemaRef, SizeNameInfo, Sema::LookupMemberName);
     SemaRef.LookupQualifiedName(SizeMemberLookup, Class);
     if (!SizeMemberLookup.empty()) {
+      FoundSizeMember = true;
       ExprResult MemberRef =
           SemaRef.BuildMemberReferenceExpr(RangeRef, RangeRef->getType(),
                                            ColonLoc,
@@ -4020,18 +4153,32 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
         &SemaRef.Context.Idents.get("distance"), ColonLoc);
     LookupResult DistLookup(SemaRef, DistNameInfo, Sema::LookupOrdinaryName);
     if (SemaRef.LookupQualifiedName(DistLookup, Std)) {
-      if (DistLookup.getResultKind() == LookupResult::FoundOverloaded) {
-        UnresolvedLookupExpr *SizeFn =
-          UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
-                                       NestedNameSpecifierLoc(), DistNameInfo,
-                                       /*ADL=*/true, /*Overloaded=*/true,
-                                       DistLookup.begin(), DistLookup.end());
-        Expr *Args[] = {BeginRef.get(), EndRef.get()};
-        ExprResult SizeCall =
-            SemaRef.ActOnCallExpr(CurScope, SizeFn, ColonLoc, Args, ColonLoc);
-        if (!SizeCall.isInvalid())
-          CountCall = SizeCall.get();
+      if (DistLookup.getResultKind() != LookupResult::FoundOverloaded) {
+        if (Diagnose)
+          SemaRef.Diag(NextCallLookup.begin().getDecl()->getLocation(),
+                       diag::note_not_overloaded_function);
+        return StmtError();
       }
+      UnresolvedLookupExpr *SizeFn =
+        UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
+                                     NestedNameSpecifierLoc(), DistNameInfo,
+                                     /*ADL=*/true, /*Overloaded=*/true,
+                                     DistLookup.begin(), DistLookup.end());
+      Expr *Args[] = {BeginRef.get(), EndRef.get()};
+      ExprResult SizeCall =
+          SemaRef.ActOnCallExpr(CurScope, SizeFn, ColonLoc, Args, ColonLoc);
+      if (!SizeCall.isInvalid())
+        CountCall = SizeCall.get();
+
+    } else if (Diagnose) {
+      // We could not find std::distance, and either could not find
+      // std::size either or the call to std::size was not resolved (which
+      // would have been already diagnosed).
+      if (!FoundSizeMember)
+        SemaRef.Diag(ColonLoc, diag::note_no_member)
+          << SizeNameInfo.getName() << Std;
+      SemaRef.Diag(ColonLoc, diag::note_no_member)
+          << DistNameInfo.getName() << Std;
     }
   }
 
@@ -4044,50 +4191,61 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();
-  auto Ret = new (SemaRef.Context) CXXCompositeExpansionStmt(
-    LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc);
+  auto Ret = CXXTemplateForRangeVarStmt::Create(SemaRef.Context,
+      LoopDeclStmt, RangeVarDS, InductionVarTPL, Count.getExtValue(),
+      TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
+
   Ret->setBeginStmt(BeginDecl.get());
   Ret->setEndStmt(EndDecl.get());
   return Ret;
 }
 
-/// When range-expr denotes an array, expand over the elements of the array.
+/// ---Classes---
 ///
-///     for constexpr (auto x : pod) stmt;
+///     class MyClass {
+///     public:
+///       int i;
+///     private:
+///       char priv;
+///     public:
+///       float f;
+///     } pod;
+///
+///     for constexpr (auto x : struct(obj)) stmt;
 ///
 /// will expand as:
 ///
-///     constexpr auto&& __range = pod;
+///     constexpr auto&& __range = obj;
 ///     { // expansion-1
-///       constexpr auto x = __select(pod, 0)
+///       constexpr auto x = __select(obj, 0); // = obj.i
 ///       stmt_1;
 ///     }
 ///     { // expansion-2
-///       constexpr auto x = __select(pod, 1)
+///       constexpr auto x = __select(obj, 1); // = obj.f
 ///       stmt_2;
 ///     }
-///     ...
-///     Up to the number of selectable members in the class.
+///     ... // Up to the number of accessible members in the class.
 ///
 /// The range-index is a precomputed list of iterators, maintained internally
 /// by the compiler. The __select intrinsic returns the nth such iterator in
 /// the sequence.
 StmtResult
-ExpansionStatementBuilder::BuildExpansionOverClass()
+ExpansionStatementBuilder::BuildExpansionOverStruct()
 {
-  CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
-  if (!RangeClass)
+  assert(!StructLoc.isInvalid());
+  if (!RangeType->isRecordType())
     return StmtError();
 
   ExprResult Projection =
-    SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
-                                     RangeVar, InductionRef);
+      SemaRef.ActOnBuiltinSelectMemberExpr(/*SelectLoc=*/SourceLocation(),
+                                           RangeRef, InductionRef);
   if (Projection.isInvalid())
     return StmtError();
-
-  std::size_t Size =
-    cast<CXXSelectMemberExpr>(Projection.get())->getNumFields();
+  auto *Sel = cast<BuiltinSelectMemberExpr>(Projection.get());
+  assert(Sel->isImplicit()); //sanity
+  assert(Sel->getNumFieldsInRange() >= 0 &&
+         "Expected NumFieldsInRange to be set during ActOn...");
+  int Size = Sel->getNumFieldsInRange();
 
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);
@@ -4095,68 +4253,70 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
   if (LoopVar->isInvalidDecl())
     return StmtError();
 
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
-    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size, ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc);
+  assert(Size >= 0 && "not set!");
+  return CXXTemplateForRangeVarStmt::Create(
+      SemaRef.Context, LoopDeclStmt, RangeVarDS, InductionVarTPL,
+      Size, TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
 }
 
 /// Build a C++ expansion statement.
 ///
 /// This performs a primary analysis of the range initializer to determine which
-/// expansion mechanism is going to be used (tuple expansion, pack expansion, or
-/// structure expansion).
+/// expansion mechanism is going to be used (tuple expansion, pack expansion,
+/// array expansion, or structure expansion).
 ///
 /// Given a range variable and a loop variable, build a new CXXForTupleStmt
 /// containing that information. Note that the body will be parsed and
 /// instantiated later.
-StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                       SourceLocation AnnotationLoc,
-                                       Stmt *LoopVar, SourceLocation ColonLoc,
-                                       Expr *Range,
-                                       SourceLocation RParenLoc,
-                                       BuildForRangeKind Kind,
-                                       bool IsConstexpr) {
-  if (!Range || !LoopVar)
+StmtResult
+Sema::ActOnCXXTemplateForRangeStmt(Scope *S, SourceLocation TemplateForLoc,
+                                   SourceLocation ConstexprLoc,
+                                   Stmt *LoopVarDS, SourceLocation ColonLoc,
+                                   SourceLocation StructLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr) {
+  if (!RangeExpr || !LoopVarDS)
     return StmtError();
-  ExpansionStatementBuilder Builder(*this, S, Kind, LoopVar, Range,
+  ExpansionStatementBuilder Builder(*this, S, Kind, LoopVarDS, RangeExpr,
                                     IsConstexpr);
-  Builder.ForLoc = ForLoc;
-  Builder.AnnotationLoc = AnnotationLoc;
+  Builder.TemplateForLoc = TemplateForLoc;
+  Builder.ConstexprLoc = ConstexprLoc;
   Builder.ColonLoc = ColonLoc;
-  Builder.RParenLoc = RParenLoc;
-  StmtResult Ret = Builder.Build();
-  return Ret;
-}
-
-StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
-                                       SourceLocation AnnotationLoc,
-                                       Stmt *LoopVarDS,
-                                       SourceLocation ColonLoc,
-                                       Stmt *RangeVarDS,
-                                       SourceLocation RParenLoc,
-                                       BuildForRangeKind Kind,
-                                       bool IsConstexpr) {
-  ExpansionStatementBuilder Builder(*this, Kind, LoopVarDS, RangeVarDS,
-                                    IsConstexpr);
-  Builder.ForLoc = ForLoc;
-  Builder.AnnotationLoc = AnnotationLoc;
-  Builder.ColonLoc = ColonLoc;
+  Builder.StructLoc = StructLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
   return Ret;
 }
 
 StmtResult
-Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
-                            SourceLocation EllipsisLoc, Stmt *LoopVarDS,
-                            SourceLocation ColonLoc, Expr *RangeExpr,
-                            SourceLocation RParenLoc, BuildForRangeKind Kind,
-                            bool IsConstexpr) {
+Sema::ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
+                                   SourceLocation ConstexprLoc,
+                                   Stmt *LoopVarDS, SourceLocation ColonLoc,
+                                   SourceLocation StructLoc, Stmt *RangeVarDS,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind,
+                                   bool IsConstexpr) {
+  ExpansionStatementBuilder Builder(*this, Kind, LoopVarDS,
+                                    cast<DeclStmt>(RangeVarDS), IsConstexpr);
+  Builder.TemplateForLoc = TemplateForLoc;
+  Builder.ConstexprLoc = ConstexprLoc;
+  Builder.ColonLoc = ColonLoc;
+  Builder.StructLoc = StructLoc;
+  Builder.RParenLoc = RParenLoc;
+  StmtResult Ret = Builder.Build();
+  return Ret;
+}
+
+StmtResult
+Sema::ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
+                                   SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                                   SourceLocation ColonLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr) {
   ExpansionStatementBuilder Builder(*this, Kind, LoopVarDS, RangeExpr,
                                     IsConstexpr);
-
-  Builder.ForLoc = ForLoc;
-  Builder.AnnotationLoc = EllipsisLoc;
+  Builder.TemplateForLoc = TemplateForLoc;
+  Builder.ConstexprLoc = ConstexprLoc;
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
@@ -4408,18 +4568,23 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   // If the range initializer is dependent, then we can't deduce its
   // type or instantiate the body. Just return the statement as-is.
   // If the expansion is a pack expansion, there is no range init.
-  if (isa<CXXPackExpansionStmt>(Expansion)) {
-    Expr *RangeExpr = cast<CXXPackExpansionStmt>(Expansion)->getRangeExpr();
+  if (isa<CXXTemplateForRangePackStmt>(Expansion)) {
+    Expr *RangeExpr =
+        cast<CXXTemplateForRangePackStmt>(Expansion)->getRangeExpr();
     if (isa<DeclRefExpr>(RangeExpr))
       return Expansion;
+    assert(isa<FunctionParmPackExpr>(RangeExpr) ||
+           isa<SubstNonTypeTemplateParmPackExpr>(RangeExpr) &&
+           "Possibly unhandled pack kind");
   } else {
-    Expr *RangeInit = cast<CXXCompositeExpansionStmt>(Expansion)->getRangeInit();
+    Expr *RangeInit =
+        cast<CXXTemplateForRangeVarStmt>(Expansion)->getRangeInit();
     if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
       return Expansion;
   }
 
   // When there are no members, return an empty compound statement.
-  if (Expansion->getSize() == 0) {
+  if (Expansion->getNumInstantiatedStatements() == 0) {
     return CompoundStmt::Create
       (Context, None, SourceLocation(), SourceLocation());
   }
@@ -4432,7 +4597,7 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
 
   // Instantiate the loop body for each element.
   llvm::SmallVector<Stmt *, 8> Stmts;
-  for (std::size_t I = 0; I < Expansion->getSize(); ++I) {
+  for (std::size_t I = 0; I < Expansion->getNumInstantiatedStatements(); ++I) {
     IntegerLiteral *E =
         IntegerLiteral::Create(Context, llvm::APSInt::getUnsigned(I),
                                Context.getSizeType(), Loc);

@@ -2288,20 +2288,20 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
-DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
+DEF_TRAVERSE_STMT(CXXTemplateForRangeVarStmt, {
   if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
     // Visit everything else only if shouldVisitImplicitCode().
     ShouldVisitChildren = false;
   }
 })
 
-DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
+DEF_TRAVERSE_STMT(CXXTemplateForRangePackStmt, {
   if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeExprStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
     // Visit everything else only if shouldVisitImplicitCode().
     ShouldVisitChildren = false;
@@ -2604,8 +2604,8 @@ DEF_TRAVERSE_STMT(MatrixSubscriptExpr, {})
 DEF_TRAVERSE_STMT(OMPArraySectionExpr, {})
 DEF_TRAVERSE_STMT(OMPArrayShapingExpr, {})
 DEF_TRAVERSE_STMT(OMPIteratorExpr, {})
-DEF_TRAVERSE_STMT(CXXSelectMemberExpr, {})
-DEF_TRAVERSE_STMT(CXXSelectPackExpr, {})
+DEF_TRAVERSE_STMT(BuiltinSelectMemberExpr, {})
+DEF_TRAVERSE_STMT(BuiltinSelectPackElemExpr, {})
 
 DEF_TRAVERSE_STMT(BlockExpr, {
   TRY_TO(TraverseDecl(S->getBlockDecl()));

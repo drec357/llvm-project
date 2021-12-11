@@ -4702,14 +4702,14 @@ recurse:
     break;
   }
 
-  case Expr::CXXSelectMemberExprClass:
-  case Expr::CXXSelectPackExprClass: {
-    const CXXSelectionExpr *SME = cast<CXXSelectMemberExpr>(E);
+  case Expr::BuiltinSelectMemberExprClass:
+  case Expr::BuiltinSelectPackElemExprClass: {
+    const BuiltinSelectExpr *SME = cast<BuiltinSelectExpr>(E);
 
     // Treated as a binary operator, see: ArraySubscriptExpr
     Out << "ix";
-    mangleExpression(SME->getBase());
-    mangleExpression(SME->getSelector());
+    mangleExpression(SME->getRangeExpr());
+    mangleExpression(SME->getIndexExpr());
     break;
   }
 

@@ -2299,6 +2299,7 @@ private:
   /// declaration which turns out to be a for-range-declaration.
   struct ForRangeInit {
     SourceLocation ColonLoc;
+    SourceLocation StructLoc; // [TemplateFor]
     ExprResult RangeExpr;
 
     bool ParsedForRangeDecl() { return !ColonLoc.isInvalid(); }
@@ -3176,8 +3177,8 @@ private:
   //===--------------------------------------------------------------------===//
   // Metaprogramming
 
-  /// Parse a __select_member expression
-  ExprResult ParseCXXSelectMemberExpr();
+  /// Parse a __select expression
+  ExprResult ParseBuiltinSelectExpr();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

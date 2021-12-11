@@ -544,8 +544,8 @@ public:
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
   Value *VisitMatrixSubscriptExpr(MatrixSubscriptExpr *E);
-  Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
-  Value *VisitCXXSelectPackExpr(CXXSelectPackExpr *E);
+  Value *VisitBuiltinSelectMemberExpr(BuiltinSelectMemberExpr *E);
+  Value *VisitBuiltinSelectPackElemExpr(BuiltinSelectPackElemExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitConvertVectorExpr(ConvertVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
@@ -1796,11 +1796,13 @@ Value *ScalarExprEmitter::VisitMatrixSubscriptExpr(MatrixSubscriptExpr *E) {
   return Builder.CreateExtractElement(Matrix, Idx, "matrixext");
 }
 
-Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+Value *ScalarExprEmitter::VisitBuiltinSelectMemberExpr(
+                                                  BuiltinSelectMemberExpr *E) {
   return EmitLoadOfLValue(E);
 }
 
-Value *ScalarExprEmitter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+Value *ScalarExprEmitter::VisitBuiltinSelectPackElemExpr(
+                                                BuiltinSelectPackElemExpr *E) {
   return EmitLoadOfLValue(E);
 }
 

@@ -28,13 +28,13 @@ struct record {
 
 constexpr void select_record() {
   constexpr record r(0, 1, 2, 3, 4, 5, 6);
-  static_assert(__select_member(r, 0) == 0);
-  static_assert(__select_member(r, 1) == 1);
-  static_assert(__select_member(r, 2) == 2);
-  static_assert(__select_member(r, 3) == 3);
-  static_assert(__select_member(r, 4) == 4);
-  static_assert(__select_member(r, 5) == 5);
-  static_assert(__select_member(r, 6) == 6);
+  static_assert(__select(r, 0) == 0);
+  static_assert(__select(r, 1) == 1);
+  static_assert(__select(r, 2) == 2);
+  static_assert(__select(r, 3) == 3);
+  static_assert(__select(r, 4) == 4);
+  static_assert(__select(r, 5) == 5);
+  static_assert(__select(r, 6) == 6);
 }
 
 template <typename T, typename U, typename S>
@@ -63,36 +63,36 @@ struct dependent_record {
 template <typename T, typename U, typename S>
 void select_dependent_record() {
   dependent_record<T, U, S> r(0, 1, 2, 3, 4, 5, 6);
-  assert(__select_member(r, 0) == 0);
-  assert(__select_member(r, 1) == 1);
-  assert(__select_member(r, 2) == 2);
-  assert(__select_member(r, 3) == 3);
-  assert(__select_member(r, 4) == 4);
-  assert(__select_member(r, 5) == 5);
-  assert(__select_member(r, 6) == 6);
+  assert(__select(r, 0) == 0);
+  assert(__select(r, 1) == 1);
+  assert(__select(r, 2) == 2);
+  assert(__select(r, 3) == 3);
+  assert(__select(r, 4) == 4);
+  assert(__select(r, 5) == 5);
+  assert(__select(r, 6) == 6);
 }
 
 void select_constexpr() {
   static constexpr record r(0, 1, 2, 3, 4, 5, 6);
-  static_assert(__select_member(r, 0) == 0);
-  static_assert(__select_member(r, 1) == 1);
-  static_assert(__select_member(r, 2) == 2);
-  static_assert(__select_member(r, 3) == 3);
-  static_assert(__select_member(r, 4) == 4);
-  static_assert(__select_member(r, 5) == 5);
-  static_assert(__select_member(r, 6) == 6);
+  static_assert(__select(r, 0) == 0);
+  static_assert(__select(r, 1) == 1);
+  static_assert(__select(r, 2) == 2);
+  static_assert(__select(r, 3) == 3);
+  static_assert(__select(r, 4) == 4);
+  static_assert(__select(r, 5) == 5);
+  static_assert(__select(r, 6) == 6);
 }
 
 template<typename T, typename U, typename S>
 void select_dependent_constexpr() {
   static constexpr dependent_record<T, U, S> r(0, 1, 2, 3, 4, 5, 6);
-  static_assert(__select_member(r, 0) == 0);
-  static_assert(__select_member(r, 1) == 1);
-  static_assert(__select_member(r, 2) == 2);
-  static_assert(__select_member(r, 3) == 3);
-  static_assert(__select_member(r, 4) == 4);
-  static_assert(__select_member(r, 5) == 5);
-  static_assert(__select_member(r, 6) == 6);
+  static_assert(__select(r, 0) == 0);
+  static_assert(__select(r, 1) == 1);
+  static_assert(__select(r, 2) == 2);
+  static_assert(__select(r, 3) == 3);
+  static_assert(__select(r, 4) == 4);
+  static_assert(__select(r, 5) == 5);
+  static_assert(__select(r, 6) == 6);
 }
 
 int main() {
