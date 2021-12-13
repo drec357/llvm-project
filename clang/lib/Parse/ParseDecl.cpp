@@ -2102,8 +2102,11 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
         Actions.startOpenMPCXXRangeFor();
       if (Tok.is(tok::l_brace))
         FRI->RangeExpr = ParseBraceInitializer();
-      else
+      else {
+        if (getLangOpts().TemplateFor)
+          TryConsumeToken(tok::kw_struct, FRI->StructLoc);
         FRI->RangeExpr = ParseExpression();
+      }
     }
 
     Decl *ThisDecl = Actions.ActOnDeclarator(getCurScope(), D);

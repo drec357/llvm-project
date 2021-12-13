@@ -931,11 +931,18 @@ private:
     unsigned TSCSpec : 2;
     unsigned InitStyle : 2;
 
+    /// [TemplateFor]
+    /// Whether this is a constexpr, implicitly generated constexpr
+    /// variable for which we are making an exception to the general
+    /// rule against having an initializer which refers to another
+    /// non-global constexpr variable.
+    unsigned NonGlobalRefsInConstInitOkay : 1;
+
     /// Whether this variable is an ARC pseudo-__strong variable; see
     /// isARCPseudoStrong() for details.
     unsigned ARCPseudoStrong : 1;
   };
-  enum { NumVarDeclBits = 8 };
+  enum { NumVarDeclBits = 9 };
 
 protected:
   enum { NumParameterIndexBits = 8 };
@@ -1095,6 +1102,26 @@ public:
     return static_cast<ThreadStorageClassSpecifier>(VarDeclBits.TSCSpec);
   }
   TLSKind getTLSKind() const;
+
+  /// [TemplateFor]
+  /// Whether this is a constexpr, implicitly generated constexpr
+  /// variable for which we are making an exception to the general
+  /// rule against having an initializer which refers to another
+  /// non-global constexpr variable.
+  /// Generally
+  /// \code
+  ///     constexpr int a = 1;
+  ///     constexpr const int *p = &a;
+  /// \endcode
+  /// should be invalid because the address of 'a' is not constant.
+  /// But we may make exceptions for certain implicitly generated
+  /// variables.
+  bool getNonGlobalRefsInConstInitOkay() const {
+    return VarDeclBits.NonGlobalRefsInConstInitOkay;
+  }
+  void setNonGlobalRefsInConstInitOkay(bool V = true) {
+    VarDeclBits.NonGlobalRefsInConstInitOkay = V;
+  }
 
   /// Returns true if a variable with function scope is a non-static local
   /// variable.
@@ -1356,6 +1383,25 @@ public:
   /// Evaluate the initializer of this variable to determine whether it's a
   /// constant initializer. Should only be called once, after completing the
   /// definition of the variable.
+  ///
+  /// [LangOpts.TemplateFor]
+  /// \param NonGlobalRefsOkay - specifies whether, if the initializer
+  /// is allowed to point to another constexpr declaration.
+  // Generally this should not be allowed; i.e.
+  /// \code
+  ///   constexpr int a = 1;
+  ///   constexpr const int *p = &a;
+  /// \endcode
+  /// ... should be invalid because the address of 'a' is not constant.
+  ///
+  /// However for certain controlled cases it may be allowed, e.g. for the
+  /// implicitly generated __range variable's initializer in a
+  /// compile-time expansion over a constant array:
+  /// \code
+  ///   constexpr int arr[] = { 1, 2, 3, 4 };
+  ///   template for (constexpr int elem : arr) {}
+  /// \endcode
+  ///
   bool checkForConstantInitialization(
       SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 

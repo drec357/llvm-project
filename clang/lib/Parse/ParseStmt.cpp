@@ -156,6 +156,39 @@ private:
 };
 }
 
+StmtResult Parser::StmtOrDeclAfterAttributesDefault(
+    ParsedStmtContext StmtCtx, ParsedAttributesWithRange &Attrs,
+    SourceLocation &GNUAttributeLoc) {
+  if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
+       (StmtCtx & ParsedStmtContext::AllowDeclarationsInC) !=
+           ParsedStmtContext()) &&
+      ((GNUAttributeLoc.isValid() &&
+        !(!Attrs.empty() &&
+          llvm::all_of(
+              Attrs, [](ParsedAttr &Attr) { return Attr.isStmtAttr(); }))) ||
+       isDeclarationStatement())) {
+    SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
+    DeclGroupPtrTy Decl;
+    if (GNUAttributeLoc.isValid()) {
+      DeclStart = GNUAttributeLoc;
+      Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs,
+                              &GNUAttributeLoc);
+    } else {
+      Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs);
+    }
+    if (Attrs.Range.getBegin().isValid())
+      DeclStart = Attrs.Range.getBegin();
+    return Actions.ActOnDeclStmt(Decl, DeclStart, DeclEnd);
+  }
+
+  if (Tok.is(tok::r_brace)) {
+    Diag(Tok, diag::err_expected_statement);
+    return StmtError();
+  }
+
+  return ParseExprStatement(StmtCtx);
+}
+
 StmtResult Parser::ParseStatementOrDeclarationAfterAttributes(
     StmtVector &Stmts, ParsedStmtContext StmtCtx,
     SourceLocation *TrailingElseLoc, ParsedAttributesWithRange &Attrs) {
@@ -212,36 +245,8 @@ Retry:
     LLVM_FALLTHROUGH;
   }
 
-  default: {
-    if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
-         (StmtCtx & ParsedStmtContext::AllowDeclarationsInC) !=
-             ParsedStmtContext()) &&
-        ((GNUAttributeLoc.isValid() &&
-          !(!Attrs.empty() &&
-            llvm::all_of(
-                Attrs, [](ParsedAttr &Attr) { return Attr.isStmtAttr(); }))) ||
-         isDeclarationStatement())) {
-      SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
-      DeclGroupPtrTy Decl;
-      if (GNUAttributeLoc.isValid()) {
-        DeclStart = GNUAttributeLoc;
-        Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs,
-                                &GNUAttributeLoc);
-      } else {
-        Decl = ParseDeclaration(DeclaratorContext::Block, DeclEnd, Attrs);
-      }
-      if (Attrs.Range.getBegin().isValid())
-        DeclStart = Attrs.Range.getBegin();
-      return Actions.ActOnDeclStmt(Decl, DeclStart, DeclEnd);
-    }
-
-    if (Tok.is(tok::r_brace)) {
-      Diag(Tok, diag::err_expected_statement);
-      return StmtError();
-    }
-
-    return ParseExprStatement(StmtCtx);
-  }
+  default:
+    return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs, GNUAttributeLoc);
 
   case tok::kw___attribute: {
     GNUAttributeLoc = Tok.getLocation();
@@ -274,6 +279,10 @@ Retry:
     break;
   case tok::kw_for:                 // C99 6.8.5.3: for-statement
     return ParseForStatement(TrailingElseLoc);
+  case tok::kw_template:
+    if (NextToken().is(tok::kw_for))// template-for-statement
+      return ParseForStatement(TrailingElseLoc);
+    return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs, GNUAttributeLoc);
 
   case tok::kw_goto:                // C99 6.8.6.1: goto-statement
     Res = ParseGotoStatement();
@@ -1846,7 +1855,12 @@ bool Parser::isForRangeIdentifier() {
 /// [C++0x]   expression
 /// [C++0x]   braced-init-list            [TODO]
 StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
-  assert(Tok.is(tok::kw_for) && "Not a for stmt!");
+  assert((Tok.is(tok::kw_for) ||
+          (getLangOpts().TemplateFor && Tok.is(tok::kw_template)))
+         && "Not a for stmt!");
+  SourceLocation TemplateLoc;
+  if (getLangOpts().TemplateFor && Tok.is(tok::kw_template))
+    TemplateLoc = ConsumeToken();
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
   SourceLocation CoawaitLoc;
@@ -1907,6 +1921,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   MaybeParseCXX11Attributes(attrs);
 
   SourceLocation EmptyInitStmtSemiLoc;
+  SourceLocation ConstexprLoc;
 
   // Parse the first part of the for specifier.
   if (Tok.is(tok::semi)) {  // for (;
@@ -1952,6 +1967,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
       // In C++0x, "for (T NS:a" might not be a typo for ::
       bool MightBeForRangeStmt = getLangOpts().CPlusPlus;
       ColonProtectionRAIIObject ColonProtection(*this, MightBeForRangeStmt);
+
+      // If TemplateFor is enabled, this might be an expansion
+      // over a constexpr range.
+      if (getLangOpts().TemplateFor && TemplateLoc.isValid())
+        TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
       SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
       DG = ParseSimpleDeclaration(
@@ -2129,10 +2149,19 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   if (ForRangeInfo.ParsedForRangeDecl()) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInfo.RangeExpr.get());
-    ForRangeStmt = Actions.ActOnCXXForRangeStmt(
+
+    if (TemplateLoc.isInvalid()) {
+      ForRangeStmt = Actions.ActOnCXXForRangeStmt(
         getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
         ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
         T.getCloseLocation(), Sema::BFRK_Build);
+    } else {
+      ForRangeStmt = Actions.ActOnCXXExpansionStmt(
+          getCurScope(), ForLoc, TemplateLoc, ForRangeInfo.LoopVar.get(),
+          ForRangeInfo.ColonLoc, ForRangeInfo.StructLoc, CorrectedRange.get(),
+          T.getCloseLocation(), Sema::BFRK_Build,
+          ConstexprLoc.isValid());
+    }
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -2191,8 +2220,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
    return Actions.FinishObjCForCollectionStmt(ForEachStmt.get(),
                                               Body.get());
 
-  if (ForRangeInfo.ParsedForRangeDecl())
-    return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+  if (ForRangeInfo.ParsedForRangeDecl()) {
+    if (TemplateLoc.isInvalid() && ConstexprLoc.isInvalid())
+      return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+    return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
+  }
 
   return Actions.ActOnForStmt(ForLoc, T.getOpenLocation(), FirstPart.get(),
                               SecondPart, ThirdPart, T.getCloseLocation(),

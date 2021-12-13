@@ -1214,6 +1214,10 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXTypeidExprClass:
     case Stmt::CXXUuidofExprClass:
     case Stmt::CXXFoldExprClass:
+    case Stmt::CXXPackExpansionStmtClass:
+    case Stmt::CXXCompositeExpansionStmtClass:
+    case Stmt::CXXSelectMemberExprClass:
+    case Stmt::CXXSelectPackElemExprClass:
     case Stmt::MSPropertyRefExprClass:
     case Stmt::MSPropertySubscriptExprClass:
     case Stmt::CXXUnresolvedConstructExprClass:

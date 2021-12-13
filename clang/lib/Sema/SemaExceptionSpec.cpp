@@ -1362,6 +1362,8 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Expr::ObjCAvailabilityCheckExprClass:
   case Expr::OffsetOfExprClass:
   case Expr::PackExpansionExprClass:
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackElemExprClass:
   case Expr::SubstNonTypeTemplateParmExprClass:
   case Expr::SubstNonTypeTemplateParmPackExprClass:
   case Expr::FunctionParmPackExprClass:
@@ -1426,6 +1428,8 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Stmt::CoroutineBodyStmtClass:
   case Stmt::CXXCatchStmtClass:
   case Stmt::CXXForRangeStmtClass:
+  case Stmt::CXXCompositeExpansionStmtClass:
+  case Stmt::CXXPackExpansionStmtClass:
   case Stmt::DefaultStmtClass:
   case Stmt::DoStmtClass:
   case Stmt::ForStmtClass:

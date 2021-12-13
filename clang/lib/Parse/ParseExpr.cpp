@@ -1500,6 +1500,10 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     Res = ParseSYCLUniqueStableNameExpression();
     break;
 
+  case tok::kw___select:
+    Res = ParseCXXSelectExpr();
+    break;
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       TypeResult Type = getTypeAnnotation(Tok);

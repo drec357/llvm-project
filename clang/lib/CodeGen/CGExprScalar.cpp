@@ -544,6 +544,8 @@ public:
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
   Value *VisitMatrixSubscriptExpr(MatrixSubscriptExpr *E);
+  Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
+  Value *VisitCXXSelectPackElemExpr(CXXSelectPackElemExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitConvertVectorExpr(ConvertVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
@@ -1792,6 +1794,16 @@ Value *ScalarExprEmitter::VisitMatrixSubscriptExpr(MatrixSubscriptExpr *E) {
 
   // TODO: Should we emit bounds checks with SanitizerKind::ArrayBounds?
   return Builder.CreateExtractElement(Matrix, Idx, "matrixext");
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(
+                                                  CXXSelectMemberExpr *E) {
+  return EmitLoadOfLValue(E);
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectPackElemExpr(
+                                                CXXSelectPackElemExpr *E) {
+  return EmitLoadOfLValue(E);
 }
 
 static int getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,

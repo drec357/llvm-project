@@ -670,6 +670,13 @@ public:
   /// Returns the clang bytecode interpreter context.
   interp::Context &getInterpContext();
 
+  /// Maps a value-dependent, record-typed lvalue expression
+  /// to references to its accessible fields.  Used as a
+  /// cache by dependent CXXSelectMemberExprs in the
+  /// template-for implementation.
+  using MemberVector = llvm::SmallVector<MemberExpr *, 8>;
+  llvm::DenseMap<Expr *, MemberVector *> Destructures;
+
   /// Returns the dynamic AST node parent map context.
   ParentMapContext &getParentMapContext();
 

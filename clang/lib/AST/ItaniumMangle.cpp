@@ -4768,6 +4768,17 @@ recurse:
     break;
   }
 
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackElemExprClass: {
+    const CXXSelectExpr *SME = cast<CXXSelectExpr>(E);
+
+    // Treated as a binary operator, see: ArraySubscriptExpr
+    Out << "ix";
+    mangleExpression(SME->getRangeExpr());
+    mangleExpression(SME->getIndexExpr());
+    break;
+  }
+
   case Expr::CompoundAssignOperatorClass: // fallthrough
   case Expr::BinaryOperatorClass: {
     NotPrimaryExpr();

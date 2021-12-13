@@ -2323,3 +2323,13 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 
   return Value;
 }
+
+LValue
+CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
+  return EmitLValue(E->getSubstituteExpr());
+}
+
+LValue
+CodeGenFunction::EmitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E) {
+  return EmitLValue(E->getSubstituteExpr());
+}

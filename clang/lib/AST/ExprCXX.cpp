@@ -4192,3 +4192,18 @@ CUDAKernelCallExpr *CUDAKernelCallExpr::CreateEmpty(const ASTContext &Ctx,
                            alignof(CUDAKernelCallExpr));
   return new (Mem) CUDAKernelCallExpr(NumArgs, HasFPFeatures, Empty);
 }
+
+CXXSelectPackElemExpr *
+CXXSelectPackElemExpr::Create(ASTContext &Context, SourceLocation SelectLoc,
+                                  Expr *RangeFPPE_or_NTTPE,
+                                  Expr *Index, DeclRefExpr *SubstituteDRE) {
+  QualType T = SubstituteDRE ? SubstituteDRE->getType() : Context.DependentTy;
+  return new (Context) CXXSelectPackElemExpr(
+      T, SelectLoc, RangeFPPE_or_NTTPE, Index, SubstituteDRE);
+}
+
+CXXSelectPackElemExpr *
+CXXSelectPackElemExpr::Create(ASTContext &Context,
+                                  EmptyShell Empty) {
+  return new (Context) CXXSelectPackElemExpr(Empty);
+}

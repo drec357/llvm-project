@@ -12216,6 +12216,7 @@ void Sema::checkNonTrivialCUnion(QualType QT, SourceLocation Loc,
 /// AddInitializerToDecl - Adds the initializer Init to the
 /// declaration dcl. If DirectInit is true, this is C++ direct
 /// initialization rather than copy initialization.
+///
 void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
   // If there is no declaration, there was an error parsing it.  Just ignore
   // the initializer.
@@ -13275,6 +13276,8 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
       // Evaluate the initializer to see if it's a constant initializer.
       HasConstInit = var->checkForConstantInitialization(Notes);
     }
+
+
 
     if (HasConstInit) {
       // FIXME: Consider replacing the initializer with a ConstantExpr.

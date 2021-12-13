@@ -2783,6 +2783,16 @@ def warn_private_extern : Warning<
 def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
+// TemplateFor
+def note_loop_body_instantiation_here : Note<
+  "in instantiation of loop body expansion">;
+def err_index_not_ice : Error<
+  "index not an integer constant expression.">;
+def err_index_exceeds_numaccmems : Error<
+  "index exceeds number of accessible members">;
+def err_expected_object_or_pack : Error<
+  "expected class object variable or pack">;
+
 // C++ Concepts
 def err_concept_decls_may_only_appear_in_global_namespace_scope : Error<
   "concept declarations may only appear in global or namespace scope">;
@@ -5443,6 +5453,13 @@ def err_fold_expression_bad_operand : Error<
 def err_fold_expression_limit_exceeded: Error<
   "instantiating fold expression with %0 arguments exceeded expression nesting "
   "limit of %1">, DefaultFatal, NoSFINAE;
+
+def err_templatefor_range_var_not_expandable : Error<
+  "object of type %0 not a tuple, constant array, or range">;
+def note_not_overloaded_function : Note<"not an overloaded function">;
+def note_no_member : Note<"no member named %0 in %1">;
+def note_incomplete_type : Error<
+  "incomplete type %0 where a complete type is required">;
 
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;

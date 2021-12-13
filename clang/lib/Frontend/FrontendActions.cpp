@@ -462,6 +462,8 @@ private:
       return "InitializingStructuredBinding";
     case CodeSynthesisContext::MarkingClassDllexported:
       return "MarkingClassDllexported";
+    case CodeSynthesisContext::ForLoopInstantiation:
+      return "ForLoopInstantiation";
     }
     return "";
   }

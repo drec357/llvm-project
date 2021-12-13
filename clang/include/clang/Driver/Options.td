@@ -2181,11 +2181,6 @@ defm pch_codegen: OptInCC1FFlag<"pch-codegen", "Generate ", "Do not generate ",
 defm pch_debuginfo: OptInCC1FFlag<"pch-debuginfo", "Generate ", "Do not generate ",
   "debug info for types in an object file built from this PCH and do not generate them elsewhere">;
 
-defm string_injection : BoolFOption<"string-injection",
-  LangOpts<"StringInjection">, DefaultFalse,
-  PosFlag<SetTrue, [CC1Option], "Enable consteval code generation via string injection">,
-  NegFlag<SetFalse>>;
-
 def fimplicit_module_maps : Flag <["-"], "fimplicit-module-maps">, Group<f_Group>,
   Flags<[NoXarchOption, CC1Option, CoreOption]>,
   HelpText<"Implicitly search the file system for module map files.">,
@@ -2203,6 +2198,16 @@ defm reflection_ts : BoolFOption<"reflection-ts",
 defm reflection_ext : BoolFOption<"reflection-ext",
   LangOpts<"ReflectionExt">, DefaultFalse,
   PosFlag<SetTrue, [CC1Option], "Enable support for C++ Reflection extensions">,
+  NegFlag<SetFalse>>;
+
+defm template_for : BoolFOption<"template-for",
+  LangOpts<"TemplateFor">, DefaultFalse,
+  PosFlag<SetTrue, [CC1Option], "Enable template for loops">,
+  NegFlag<SetFalse>>;
+
+defm string_injection : BoolFOption<"string-injection",
+  LangOpts<"StringInjection">, DefaultFalse,
+  PosFlag<SetTrue, [CC1Option], "Enable consteval code generation via string injection">,
   NegFlag<SetFalse>>;
 
 defm modules : BoolFOption<"modules",
