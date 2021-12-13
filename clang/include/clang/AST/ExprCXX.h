@@ -4911,6 +4911,7 @@ class ReflexprIdExpr : public Expr {
     const NamedDecl *ReflDecl;
     const TypeSourceInfo *TypeInfo;
     const CXXBaseSpecifier *BaseSpec;
+    const LambdaCapture *Capture;
   } Argument;
   SourceLocation OperatorLoc, RParenLoc;
 public:
@@ -4919,12 +4920,17 @@ public:
     REAK_Specifier,
     REAK_NamedDecl,
     REAK_TypeInfo,
-    REAK_BaseSpecifier
+    REAK_BaseSpecifier,
+    REAK_Capture
   };
 
   /// Construct an empty reflexpr expression.
   explicit ReflexprIdExpr(EmptyShell Empty)
-    : Expr(ReflexprIdExprClass, Empty) {}
+      : Expr(MetaobjectIdExprClass, Empty) {}
+
+  ReflexprIdExpr(QualType resultType,
+                 SourceLocation opLoc,
+                 SourceLocation endLoc);
 
   ReflexprIdExpr(QualType resultType, MetaobjectKind kind,
                  SourceLocation opLoc,
@@ -4943,7 +4949,15 @@ public:
   ReflexprIdExpr(QualType resultType, const CXXBaseSpecifier *baseSpec,
                  SourceLocation opLoc, SourceLocation endLoc);
 
+  ReflexprIdExpr(QualType resultType, const LambdaCapture *capture,
+                 SourceLocation opLoc, SourceLocation endLoc);
+
   ReflexprIdExpr(const ReflexprIdExpr &that);
+
+  static ReflexprIdExpr*
+  getEmptyReflexprIdExpr(ASTContext &Ctx,
+                         SourceLocation opLoc = SourceLocation(),
+                         SourceLocation endLoc = SourceLocation());
 
   static ReflexprIdExpr*
   getGlobalScopeReflexprIdExpr(ASTContext &Ctx,
@@ -4978,6 +4992,11 @@ public:
 
   static ReflexprIdExpr*
   getBaseSpecifierReflexprIdExpr(ASTContext &Ctx, const CXXBaseSpecifier *bSpec,
+                                 SourceLocation opLoc = SourceLocation(),
+                                 SourceLocation endLoc = SourceLocation());
+
+  static ReflexprIdExpr*
+  getLambdaCaptureReflexprIdExpr(ASTContext &Ctx, const LambdaCapture *capture,
                                  SourceLocation opLoc = SourceLocation(),
                                  SourceLocation endLoc = SourceLocation());
 
@@ -5050,6 +5069,14 @@ public:
     return (getCategory() & Cat) == Cat;
   }
 
+  bool isArgumentEmpty() const {
+    if (getKind() == MOK_Nothing) {
+      assert(getArgKind() == REAK_Nothing);
+      return true;
+    }
+    return false;
+  }
+
   bool isArgumentGlobalScope() const {
     if (getKind() == MOK_GlobalScope) {
       assert(getArgKind() == REAK_Nothing);
@@ -5097,6 +5124,7 @@ public:
   }
 
   static const NamedDecl *findTypeDecl(QualType Ty);
+
   const NamedDecl *findArgumentNamedDecl(ASTContext &, bool removeSugar) const;
   const NamedDecl *findArgumentNamedDecl(ASTContext &Ctx) const {
     return findArgumentNamedDecl(Ctx, getRemoveSugar());
@@ -5139,6 +5167,20 @@ public:
   void setArgumentBaseSpecifier(const CXXBaseSpecifier *bSpec) {
     assert(isArgumentBaseSpecifier());
     Argument.BaseSpec = bSpec;
+  }
+
+  bool isArgumentLambdaCapture() const {
+    return getArgKind() == REAK_Capture;
+  }
+
+  const LambdaCapture *getArgumentLambdaCapture() const {
+    assert(isArgumentLambdaCapture());
+    return Argument.Capture;
+  };
+
+  void setArgumentLambdaCapture(const LambdaCapture *capture) {
+    assert(isArgumentLambdaCapture());
+    Argument.Capture = capture;
   }
 
   bool isArgumentDependent() const;
@@ -5213,6 +5255,9 @@ public:
   static ReflexprIdExpr *getReflexprIdExpr(ASTContext &Ctx, Expr *E,
                                            void *EvlInfo = nullptr);
 
+  static DeclRefExpr *buildDeclRefExpr(ASTContext &Ctx, const ValueDecl *VD,
+                                       ExprValueKind VK, SourceLocation Loc);
+
   static bool queryExprUIntValue(ASTContext &Ctx, uint64_t &val, Expr *);
 };
 
@@ -5248,6 +5293,9 @@ class UnaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static bool opIsUnion(ASTContext &, ReflexprIdExpr*);
   static bool opUsesClassKey(ASTContext &, ReflexprIdExpr*);
   static bool opUsesStructKey(ASTContext &, ReflexprIdExpr*);
+  static bool opUsesDefaultCopyCapture(ASTContext &, ReflexprIdExpr*);
+  static bool opUsesDefaultReferenceCapture(ASTContext &, ReflexprIdExpr*);
+  static bool opIsCallOperatorConst(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetAccessSpecifier(ASTContext &, ReflexprIdExpr*);
   static bool opIsPublic(ASTContext &, ReflexprIdExpr*);
   static bool opIsProtected(ASTContext &, ReflexprIdExpr*);
@@ -5263,9 +5311,11 @@ class UnaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static ReflexprIdExpr *opGetPublicMemberFunctions(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetConstructors(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetDestructors(ASTContext &, ReflexprIdExpr*);
+  static ReflexprIdExpr *opGetDestructor(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetOperators(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetEnumerators(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetParameters(ASTContext &, ReflexprIdExpr*);
+  static ReflexprIdExpr *opGetCaptures(ASTContext &, ReflexprIdExpr*);
 
   static ReflexprIdExpr *opGetClass(ASTContext &, ReflexprIdExpr*);
 
@@ -5288,12 +5338,12 @@ class UnaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static ReflexprIdExpr *opHideProtected(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opHidePrivate(ASTContext &, ReflexprIdExpr*);
 
+  static bool opIsEmpty(ASTContext &, ReflexprIdExpr*);
   static uint64_t opGetSize(ASTContext &, ReflexprIdExpr*);
 
   static QualType getResultKindType(ASTContext &Ctx,
                                     UnaryMetaobjectOp Oper,
                                     MetaobjectOpResult OpRes,
-                                    bool isDependent,
                                     Expr *argExpr);
 public:
   /// \brief Construct an empty metaobject operation expression.
@@ -5302,13 +5352,12 @@ public:
 
   UnaryMetaobjectOpExpr(ASTContext &, UnaryMetaobjectOp Oper,
                         MetaobjectOpResult OpRes, QualType resultType,
-                        Expr *argExpr, SourceLocation opLoc,
-                        SourceLocation endLoc);
+                        Expr *argExpr, ExprValueKind VK,
+                        SourceLocation opLoc, SourceLocation endLoc);
 
   static UnaryMetaobjectOpExpr *
   Create(ASTContext &Ctx, UnaryMetaobjectOp Oper, MetaobjectOpResult OpRes,
-         bool inUnrefltype, Expr *argExpr,
-         SourceLocation opLoc, SourceLocation endLoc);
+         Expr *argExpr, SourceLocation opLoc, SourceLocation endLoc);
 
   UnaryMetaobjectOp getKind() const {
     return UnaryMetaobjectOp(UnaryMetaobjectOpExprBits.Kind);
@@ -5368,13 +5417,18 @@ public:
 
   bool hasPtrResult() const;
 
-  static const ValueDecl *getValueDeclResult(ASTContext &, UnaryMetaobjectOp,
+  static const ValueDecl *getResultValueDecl(ASTContext &, UnaryMetaobjectOp,
                                              ReflexprIdExpr*);
-  const ValueDecl *getValueDeclResult(ASTContext &Ctx, void *EvlInfo) const;
+  const ValueDecl *getResultValueDecl(ASTContext &Ctx, void *EvlInfo) const;
+
+  DeclRefExpr *buildResultDeclRefExpr(ASTContext &Ctx, void* EvlInfo,
+                                      ExprValueKind VK) const {
+    return buildDeclRefExpr(Ctx, getResultValueDecl(Ctx, EvlInfo),
+                            VK, getOperatorLoc());
+  }
 
   static QualType getValueDeclType(ASTContext &, UnaryMetaobjectOp,
-                                   const ValueDecl *valDecl,
-                                   bool isDependent);
+                                   const ValueDecl *valDecl);
 
   bool hasOpResultType() const;
 
@@ -5403,7 +5457,6 @@ class NaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static QualType getResultKindType(ASTContext &Ctx,
                                     NaryMetaobjectOp Oper,
                                     MetaobjectOpResult OpRes,
-                                    bool isDependent,
                                     unsigned arity, Expr **argExpr);
 public:
   /// \brief Construct an empty metaobject operation expression.
@@ -5417,7 +5470,6 @@ public:
 
   static NaryMetaobjectOpExpr *
   Create(ASTContext &Ctx, NaryMetaobjectOp Oper, MetaobjectOpResult OpRes,
-         bool inUnrefltype,
          unsigned arity, Expr **argExpr,
          SourceLocation opLoc, SourceLocation endLoc);
 

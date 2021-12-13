@@ -8155,7 +8155,6 @@ bool LValueExprEvaluator::VisitDeclRefExpr(const DeclRefExpr *E) {
   return Error(E);
 }
 
-
 bool LValueExprEvaluator::VisitVarDecl(const Expr *E, const VarDecl *VD) {
 
   // If we are within a lambda's call operator, check whether the 'VD' referred
@@ -9592,29 +9591,16 @@ bool PointerExprEvaluator::VisitUnaryMetaobjectOpExpr(
     }
   }
   if (E->hasPtrResult()) {
-    if(ValueDecl *valDecl = const_cast<ValueDecl *>(
-          E->getValueDeclResult(Info.Ctx, &Info))) {
+    if(DeclRefExpr *valDeclRefExpr =
+        E->buildResultDeclRefExpr(Info.Ctx, &Info, VK_LValue)) {
       QualType valPtrTy = E->getType();
       assert(valPtrTy->isPointerType());
-
-      const SourceLocation opLoc = E->getOperatorLoc();
-
-      // [reflection-ts] FIXME We are just fooling the later checks,
-      // into thinking that the DRE had some nested-name specifier here.
-      // Do we need to build a *valid* NNS ?
-      NestedNameSpecifierLocBuilder NNSLB;
-      NNSLB.MakeGlobal(Info.Ctx, opLoc);
-
-      DeclRefExpr *valDeclRefExpr =
-          DeclRefExpr::Create(Info.Ctx, NNSLB.getWithLocInContext(Info.Ctx), opLoc,
-                              valDecl, false /*EnclVarOrCapture?*/, opLoc,
-                              valDecl->getType(), VK_LValue, valDecl, nullptr);
 
       UnaryOperator *result =
         UnaryOperator::Create(Info.Ctx, valDeclRefExpr, UO_AddrOf,
                               valPtrTy, VK_PRValue, OK_Ordinary,
-                              opLoc, false, FPOptionsOverride());
-      return Success(result);
+                              E->getOperatorLoc(), false, FPOptionsOverride());
+      return VisitUnaryAddrOf(result);
     }
   }
   return false;
@@ -9712,7 +9698,7 @@ bool MemberPointerExprEvaluator::VisitUnaryAddrOf(const UnaryOperator *E) {
 bool MemberPointerExprEvaluator::VisitUnaryMetaobjectOpExpr(
     const UnaryMetaobjectOpExpr *E) {
   if (E->hasPtrResult()) {
-    if (const ValueDecl *valDecl = E->getValueDeclResult(Info.Ctx, &Info)) {
+    if (const ValueDecl *valDecl = E->getResultValueDecl(Info.Ctx, &Info)) {
       return Success(valDecl);
     }
   }

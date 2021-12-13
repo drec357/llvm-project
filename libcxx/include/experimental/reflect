@@ -486,6 +486,33 @@ struct _LIBCPP_TEMPLATE_VIS uses_struct_key
 template <Type _Tp>
 inline constexpr auto uses_struct_key_v = uses_struct_key<_Tp>::value;
 
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_default_copy_capture
+  : integral_constant<
+    bool,
+    __metaobject_uses_default_copy_capture(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto uses_default_copy_capture_v = uses_default_copy_capture<_Tp>::value;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_default_reference_capture
+  : integral_constant<
+    bool,
+    __metaobject_uses_default_reference_capture(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto uses_default_reference_capture_v = uses_default_reference_capture<_Tp>::value;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_call_operator_const
+  : integral_constant<
+    bool,
+    __metaobject_is_call_operator_const(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto is_call_operator_const_v = is_call_operator_const<_Tp>::value;
+
 template <MemberFunction _Tp>
 struct _LIBCPP_TEMPLATE_VIS is_const
   : integral_constant<bool, __metaobject_is_const(__unwrap_metaobject_id_v<_Tp>)> {};
@@ -723,6 +750,14 @@ template <Record _Tp>
 using get_destructors_t = typename get_destructors<_Tp>::type;
 
 template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_destructor {
+  using type = __metaobject<__metaobject_get_destructor(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_destructor_t = typename get_destructor<_Tp>::type;
+
+template <Record _Tp>
 struct _LIBCPP_TEMPLATE_VIS get_operators {
   using type = __metaobject<__metaobject_get_operators(__unwrap_metaobject_id_v<_Tp>)>;
 };
@@ -745,6 +780,14 @@ struct _LIBCPP_TEMPLATE_VIS get_parameters {
 
 template <Callable _Tp>
 using get_parameters_t = typename get_parameters<_Tp>::type;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_captures {
+  using type = __metaobject<__metaobject_get_captures(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Lambda _Tp>
+using get_captures_t = typename get_captures<_Tp>::type;
 
 // get sequence element
 template <size_t _I, ObjectSequence _Tp>

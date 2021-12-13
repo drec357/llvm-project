@@ -36,6 +36,7 @@ auto main() -> int {
   mystruct z{};
 
   static_assert(!Type<int>);
+  using me = reflexpr();
   using mg = reflexpr(::);
   using mi = reflexpr(int);
   using ms = reflexpr(std);
@@ -44,6 +45,7 @@ auto main() -> int {
   using my = reflexpr(y);
   using mz = reflexpr(z);
 
+  static_assert(!Object<me>);
   static_assert(Object<mi>);
   static_assert(Object<ms>);
   static_assert(!ObjectSequence<mi>);

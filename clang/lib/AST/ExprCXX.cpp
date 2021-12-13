@@ -1707,6 +1707,21 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 }
 
 // [reflection-ts]
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_Nothing);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Nothing);
+  Argument.Nothing = nullptr;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+}
+
 ReflexprIdExpr::ReflexprIdExpr(QualType resultType, MetaobjectKind kind,
                                SourceLocation OperatorLoc,
                                SourceLocation RParenLoc)
@@ -1749,7 +1764,7 @@ ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const NamedDecl *nDecl,
   if (isa<NamespaceAliasDecl>(nDecl)) {
     setKind(MOK_NamespaceAlias);
   } else if (isa<NamespaceDecl>(nDecl)) {
-    setKind(MOK_Namespace);
+    setKind(MOK_NamespaceScope);
   } else if (isa<EnumDecl>(nDecl)) {
     if (nDecl->isCXXClassMember()) {
       setKind(MOK_MemberEnum);
@@ -1842,7 +1857,7 @@ ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const NamedDecl *nDecl,
         setKind(MOK_Function);
     }
   } else if (isa<TypeDecl>(nDecl)) {
-    setKind(MOK_Type);
+    setKind(MOK_ScopedType);
   } else if (isa<FieldDecl>(nDecl)) {
     setKind(MOK_DataMember);
   } else if (const auto *VD = dyn_cast<VarDecl>(nDecl)) {
@@ -1902,7 +1917,18 @@ ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const TypeSourceInfo *TInfo,
   } else if (isa<EnumType>(RT)) {
     setKind(isAlias ? MOK_EnumAlias : MOK_Enum);
   } else {
-    setKind(isAlias ? MOK_TypeAlias : MOK_Type);
+    if (isAlias) {
+      setKind(MOK_TypeAlias);
+    } else {
+      const bool isNotScoped =
+        RT->isPointerType() ||
+        RT->isReferenceType() ||
+        RT->isFunctionType();
+      if (isNotScoped)
+        setKind(MOK_Type);
+      else
+        setKind(MOK_ScopedType);
+    }
   }
   Argument.TypeInfo = TInfo;
   setSeqKind(MOSK_None);
@@ -1924,6 +1950,23 @@ ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
   setSeqKind(MOSK_None);
   setArgKind(REAK_BaseSpecifier);
   Argument.BaseSpec = baseSpec;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
+                               const LambdaCapture *capture,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_LambdaCapture);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Capture);
+  Argument.Capture = capture;
   setAccessibility(MOA_AllowPrivate);
   setRemoveSugar(false);
   setDependence(computeDependence(this));
@@ -1953,9 +1996,22 @@ ReflexprIdExpr::ReflexprIdExpr(const ReflexprIdExpr &that)
   case REAK_BaseSpecifier:
     Argument.BaseSpec = that.Argument.BaseSpec;
     break;
+  case REAK_Capture:
+    Argument.Capture = that.Argument.Capture;
+    break;
   }
   setAccessibility(that.getAccessibility());
   setRemoveSugar(that.getRemoveSugar());
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getEmptyReflexprIdExpr(ASTContext &Ctx,
+                                       SourceLocation opLoc,
+                                       SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findEmptyReflexpr())
+    return E;
+  return Ctx.cacheEmptyReflexpr(new (Ctx) ReflexprIdExpr(
+        Ctx.MetaobjectIdTy, opLoc, endLoc));
 }
 
 ReflexprIdExpr*
@@ -2034,6 +2090,16 @@ ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(ASTContext &Ctx,
       ReflexprIdExpr(Ctx.MetaobjectIdTy, baseSpec, opLoc, endLoc);
 }
 
+ReflexprIdExpr*
+ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(ASTContext &Ctx,
+                                               const LambdaCapture *capture,
+                                               SourceLocation opLoc,
+                                               SourceLocation endLoc) {
+  // [reflection-ts] FIXME cache?
+  return new (Ctx)
+      ReflexprIdExpr(Ctx.MetaobjectIdTy, capture, opLoc, endLoc);
+}
+
 ReflexprIdExpr *ReflexprIdExpr::getSeqReflexprIdExpr(ASTContext &Ctx,
                                                      ReflexprIdExpr *that,
                                                      MetaobjectSequenceKind MoSK) {
@@ -2102,13 +2168,14 @@ StringRef ReflexprIdExpr::getMetaobjectKindName(MetaobjectKind MoK) {
     return "a base specifier";
   case MOK_GlobalScope:
     return "the global scope";
-  case MOK_Namespace:
+  case MOK_NamespaceScope:
     return "a namespace";
   case MOK_NamespaceAlias:
     return "a namespace alias";
   case MOK_TemplateParameterScope:
     return "a template parameter scope";
   case MOK_Type:
+  case MOK_ScopedType:
     return "a type";
   case MOK_Enum:
     return "an enum";
@@ -2140,6 +2207,8 @@ StringRef ReflexprIdExpr::getMetaobjectKindName(MetaobjectKind MoK) {
     return "a lambda alias";
   case MOK_ClassAlias:
     return "a class alias";
+  case MOK_TemplateClass:
+    return "a template class";
   case MOK_TemplateTypeParameter:
   case MOK_TemplateEnumTypeParameter:
     return "a template type parameter";
@@ -2178,6 +2247,7 @@ StringRef ReflexprIdExpr::getMetaobjectKindName(MetaobjectKind MoK) {
   case MOK_ObjectSequence:
     return "a metaobject sequence";
   case MOK_Object:
+  case MOK_Nothing:
     break;
   }
   return StringRef();
@@ -2193,8 +2263,8 @@ translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
     return MOC_Base;
   case MOK_GlobalScope:
     return MOC_GlobalScope;
-  case MOK_Namespace:
-    return MOC_Namespace;
+  case MOK_NamespaceScope:
+    return MOC_NamespaceScope;
   case MOK_NamespaceAlias:
     return MOC_NamespaceAlias;
   case MOK_TemplateParameterScope:
@@ -2231,6 +2301,8 @@ translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
     return MOC_LambdaAlias;
   case MOK_ClassAlias:
     return MOC_ClassAlias;
+  case MOK_TemplateClass:
+    return MOC_TemplateClass;
   case MOK_TemplateTypeParameter:
     return MOC_TemplateTypeParameter;
   case MOK_TemplateEnumTypeParameter:
@@ -2243,6 +2315,8 @@ translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
     return MOC_FunctionParameter;
   case MOK_NamedFunction:
     return MOC_NamedFunction;
+  case MOK_ScopedType:
+    return MOC_ScopedType;
   case MOK_DataMember:
     return MOC_DataMember;
   case MOK_MemberType:
@@ -2272,7 +2346,9 @@ translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
   case MOK_ObjectSequence:
     return MOC_ObjectSequence;
   case MOK_Object:
-    llvm_unreachable("Metaobject kind must be known at this point!");
+    return MOC_Object;
+  case MOK_Nothing:
+    return MOC_Nothing;
   }
   llvm_unreachable("Metaobject kind not implemented!");
 }
@@ -2295,7 +2371,6 @@ const NamedDecl *ReflexprIdExpr::findTypeDecl(QualType Ty) {
   }
   return nullptr;
 }
-
 
 QualType ReflexprIdExpr::getBaseArgumentType(ASTContext &,
                                              bool removeSugar) const {
@@ -2327,9 +2402,11 @@ QualType ReflexprIdExpr::getBaseArgumentType(ASTContext &,
 
 
 const NamedDecl *ReflexprIdExpr::findArgumentNamedDecl(ASTContext &Ctx,
-                                                     bool removeSugar) const {
+                                                       bool removeSugar) const {
   if (isArgumentNamedDecl())
     return getArgumentNamedDecl();
+  if (isArgumentLambdaCapture())
+    return getArgumentLambdaCapture()->getCapturedVar();
   if (isArgumentType())
     return findTypeDecl(getBaseArgumentType(Ctx, removeSugar));
   return nullptr;
@@ -2419,6 +2496,17 @@ AccessSpecifier MetaobjectOpExprBase::getArgumentAccess(ASTContext &Ctx,
   return REE->getArgumentAccess(Ctx);
 }
 
+DeclRefExpr *MetaobjectOpExprBase::buildDeclRefExpr(ASTContext &Ctx,
+                                                    const ValueDecl* VD,
+                                                    ExprValueKind VK,
+                                                    SourceLocation Loc) {
+
+  return DeclRefExpr::Create(
+      Ctx, NestedNameSpecifierLoc(), Loc, const_cast<ValueDecl *>(VD),
+      false /*EnclVarOrCapture?*/, Loc, VD->getType(),
+      VK, const_cast<NamedDecl *>(dyn_cast<NamedDecl>(VD)));
+}
+
 bool MetaobjectOpExprBase::queryExprUIntValue(ASTContext &Ctx, uint64_t &value,
                                               Expr *E) {
   if (const auto apsi = E->getIntegerConstantExpr(Ctx)) {
@@ -2493,9 +2581,8 @@ llvm::APSInt MetaobjectOpExprBase::opGetConstant(ASTContext &Ctx,
 QualType UnaryMetaobjectOpExpr::getResultKindType(ASTContext &Ctx,
                                                   UnaryMetaobjectOp Oper,
                                                   MetaobjectOpResult OpRes,
-                                                  bool inUnrefltype,
                                                   Expr *argExpr) {
-  bool isDependent = inUnrefltype |
+  bool isDependent =
     (argExpr->getDependence() & ExprDependence::TypeValueInstantiation);
 
   switch (OpRes) {
@@ -2510,10 +2597,18 @@ QualType UnaryMetaobjectOpExpr::getResultKindType(ASTContext &Ctx,
     case MOOR_Constant:
     case MOOR_Pointer: {
       if (ReflexprIdExpr *REE = ReflexprIdExpr::fromExpr(Ctx, argExpr)) {
-        if (const auto *ND = REE->getArgumentNamedDecl()) {
-          if (const auto *VD = dyn_cast<ValueDecl>(ND)) {
-            return UnaryMetaobjectOpExpr::getValueDeclType(Ctx, Oper, VD,
-                                                           isDependent);
+        if (REE->isArgumentNamedDecl()) {
+          if (const auto *ND = REE->getArgumentNamedDecl()) {
+            if (const auto *VD = dyn_cast<ValueDecl>(ND)) {
+              return UnaryMetaobjectOpExpr::getValueDeclType(Ctx, Oper, VD);
+            }
+          }
+        }
+        if (REE->isArgumentLambdaCapture()) {
+          if (const auto *LC = REE->getArgumentLambdaCapture()) {
+            if (const auto *VD = LC->getCapturedVar()) {
+              return UnaryMetaobjectOpExpr::getValueDeclType(Ctx, Oper, VD);
+            }
           }
         }
         llvm_unreachable("Unable to find the type of constant-returning operation");
@@ -2549,9 +2644,10 @@ UnaryMetaobjectOpExpr::UnaryMetaobjectOpExpr(ASTContext &Ctx,
                                              UnaryMetaobjectOp Oper,
                                              MetaobjectOpResult OpRes,
                                              QualType resultType, Expr *argExpr,
+                                             ExprValueKind VK,
                                              SourceLocation opLoc,
                                              SourceLocation endLoc)
-    : Expr(UnaryMetaobjectOpExprClass, resultType, VK_PRValue, OK_Ordinary),
+    : Expr(UnaryMetaobjectOpExprClass, resultType, VK, OK_Ordinary),
       ArgExpr(argExpr), OpLoc(opLoc), EndLoc(endLoc) {
 
   setKind(Oper);
@@ -2561,14 +2657,12 @@ UnaryMetaobjectOpExpr::UnaryMetaobjectOpExpr(ASTContext &Ctx,
 
 UnaryMetaobjectOpExpr *
 UnaryMetaobjectOpExpr::Create(ASTContext &Ctx, UnaryMetaobjectOp Oper,
-                              MetaobjectOpResult OpRes, bool inUnrefltype,
-                              Expr *argExpr,
+                              MetaobjectOpResult OpRes, Expr *argExpr,
                               SourceLocation opLoc, SourceLocation endLoc) {
-  QualType resType =
-      getResultKindType(Ctx, Oper, OpRes, inUnrefltype, argExpr);
+  QualType resType = getResultKindType(Ctx, Oper, OpRes, argExpr);
 
-  return new (Ctx) UnaryMetaobjectOpExpr(Ctx, Oper, OpRes, resType,
-                                         argExpr, opLoc, endLoc);
+  return new (Ctx) UnaryMetaobjectOpExpr(Ctx, Oper, OpRes, resType, argExpr,
+                                         VK_PRValue, opLoc, endLoc);
 }
 
 StringRef UnaryMetaobjectOpExpr::getOperationSpelling(UnaryMetaobjectOp MoOp) {
@@ -2627,12 +2721,18 @@ bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
   case UMOO_GetPublicMemberFunctions:
   case UMOO_GetConstructors:
   case UMOO_GetDestructors:
+  case UMOO_GetDestructor:
   case UMOO_GetOperators:
     return conceptIsA(MoC, MOC_Record);
   case UMOO_GetEnumerators:
     return conceptIsA(MoC, MOC_Enum);
   case UMOO_GetParameters:
     return conceptIsA(MoC, MOC_Callable);
+  case UMOO_GetCaptures:
+  case UMOO_UsesDefaultCopyCapture:
+  case UMOO_UsesDefaultReferenceCapture:
+  case UMOO_IsCallOperatorConst:
+    return conceptIsA(MoC, MOC_Lambda);
   case UMOO_GetClass:
     return conceptIsA(MoC, MOC_Base);
   case UMOO_GetAccessSpecifier:
@@ -2678,6 +2778,7 @@ bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
     return conceptIsA(MoC, MOC_Constant);
   case UMOO_HideProtected:
   case UMOO_HidePrivate:
+  case UMOO_IsEmpty:
   case UMOO_GetSize:
     return conceptIsA(MoC, MOC_ObjectSequence);
   }
@@ -2750,6 +2851,10 @@ bool UnaryMetaobjectOpExpr::opIsUnnamed(ASTContext &Ctx, ReflexprIdExpr *REE) {
     return false;
   } else if (REE->isArgumentNamedDecl()) {
     return REE->getArgumentNamedDecl()->getName().empty();
+  } else if (REE->isArgumentLambdaCapture()) {
+    if (const auto *VD = REE->getArgumentLambdaCapture()->getCapturedVar()) {
+      return VD->getName().empty();
+    }
   } else if (REE->isArgumentType()) {
     QualType RT = REE->getBaseArgumentType(Ctx);
 
@@ -2807,6 +2912,15 @@ std::string UnaryMetaobjectOpExpr::opGetName(ASTContext &Ctx,
       }
     }
     return ND->getName().str();
+  } else if (REE->isArgumentLambdaCapture()) {
+    const auto *LC = REE->getArgumentLambdaCapture();
+    if (const auto *VD = LC->getCapturedVar()) {
+      return VD->getName().str();
+    }
+    if (LC->capturesThis()) {
+      return "this";
+    }
+    return {};
   } else if (REE->isArgumentType()) {
     QualType RT = REE->getBaseArgumentType(Ctx);
 
@@ -2856,7 +2970,7 @@ uint64_t UnaryMetaobjectOpExpr::opDisplayNameLen(ASTContext &Ctx,
 
 
 ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetScope(ASTContext &Ctx,
-                                                ReflexprIdExpr *REE) {
+                                                  ReflexprIdExpr *REE) {
   assert(REE);
 
   if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
@@ -2876,10 +2990,18 @@ ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetType(ASTContext &Ctx,
   assert(REE);
 
   if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, FD->getReturnType(), true);
+    }
+    if (const auto *VD = dyn_cast<ValueDecl>(ND)) {
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, VD->getType(), true);
+    }
     if (const auto *DD = dyn_cast<DeclaratorDecl>(ND)) {
-      TypeSourceInfo *TInfo = DD->getTypeSourceInfo();
-      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, TInfo, true);
-    } else if (const DeclContext *scopeDC = ND->getDeclContext()) {
+      if (TypeSourceInfo *TInfo = DD->getTypeSourceInfo()) {
+        return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, TInfo, true);
+      }
+    }
+    if (const DeclContext *scopeDC = ND->getDeclContext()) {
       if (const auto *ED = dyn_cast<EnumDecl>(scopeDC)) {
         return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, ED);
       }
@@ -2987,7 +3109,8 @@ bool UnaryMetaobjectOpExpr::opIsUnion(ASTContext &Ctx, ReflexprIdExpr *REE) {
   return false;
 }
 
-bool UnaryMetaobjectOpExpr::opUsesClassKey(ASTContext &Ctx, ReflexprIdExpr *REE) {
+bool UnaryMetaobjectOpExpr::opUsesClassKey(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
   assert(REE);
 
   if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
@@ -2997,12 +3120,50 @@ bool UnaryMetaobjectOpExpr::opUsesClassKey(ASTContext &Ctx, ReflexprIdExpr *REE)
   return false;
 }
 
-bool UnaryMetaobjectOpExpr::opUsesStructKey(ASTContext &Ctx, ReflexprIdExpr *REE) {
+bool UnaryMetaobjectOpExpr::opUsesStructKey(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
   assert(REE);
 
   if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
     if (const auto *TD = dyn_cast<TagDecl>(ND))
       return TD->getTagKind() == TTK_Struct;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesDefaultCopyCapture(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      return RD->getLambdaCaptureDefault() == LCD_ByCopy;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesDefaultReferenceCapture(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      return RD->getLambdaCaptureDefault() == LCD_ByRef;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsCallOperatorConst(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      if (RD->isLambda()) {
+        if (const auto *CMD = RD->getLambdaCallOperator()) {
+          return CMD->isConst();
+        }
+      }
   }
   return false;
 }
@@ -3138,6 +3299,28 @@ ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetParameters(
   return REE;
 }
 
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetCaptures(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Captures);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetDestructor(ASTContext &Ctx,
+                                                       ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND)) {
+      return ReflexprIdExpr::getNamedDeclReflexprIdExpr(
+          Ctx, RD->getDestructor());
+    }
+  }
+
+  return REE;
+}
+
 ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetClass(ASTContext &Ctx,
                                                   ReflexprIdExpr *REE) {
   assert(REE && REE->isArgumentBaseSpecifier());
@@ -3188,6 +3371,8 @@ bool UnaryMetaobjectOpExpr::opIsInline(ASTContext &Ctx, ReflexprIdExpr *REE) {
       return VD->isInline() || VD->isInlineSpecified();
     if (const auto *FD = dyn_cast<FunctionDecl>(ND))
       return FD->isInlineSpecified();
+    if (const auto *NSD = dyn_cast<NamespaceDecl>(ND))
+      return NSD->isInline();
   }
   return false;
 }
@@ -3376,7 +3561,14 @@ static void applyOnMetaobjSeqElements(ASTContext &Ctx, Action &act,
         act(matches, DC->decls_begin(), DC->decls_end(), access);
       } else if (REE->getSeqKind() == MOSK_MemberFunctions) {
         auto matches = [](const Decl *d) -> bool {
-          return isa<CXXMethodDecl>(d);
+          if (const auto *CMF = dyn_cast<CXXMethodDecl>(d)) {
+            return !isa<CXXConstructorDecl>(CMF) &&
+                   !isa<CXXDestructorDecl>(CMF) &&
+                   !CMF->isMoveAssignmentOperator() &&
+                   !CMF->isCopyAssignmentOperator() &&
+                   !CMF->isOverloadedOperator();
+          }
+          return false;
         };
         act(matches, DC->decls_begin(), DC->decls_end(), access);
       } else if (REE->getSeqKind() == MOSK_Enumerators) {
@@ -3393,6 +3585,11 @@ static void applyOnMetaobjSeqElements(ASTContext &Ctx, Action &act,
         if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
           auto matches = [](const Decl *) -> bool { return true; };
           act(matches, FD->param_begin(), FD->param_end(), access);
+        }
+      } else if (REE->getSeqKind() == MOSK_Captures) {
+        if (const auto *FD = dyn_cast<CXXRecordDecl>(ND)) {
+          auto matches = [](const LambdaCapture&) -> bool { return true; };
+          act(matches, FD->captures_begin(), FD->captures_end(), access);
         }
       }
     }
@@ -3427,7 +3624,36 @@ struct matchingMetaobjSeqElementUtils {
     }
     return true;
   }
+
+  static bool isAccessible(const LambdaCapture &, MetaobjectAccessibility) {
+    return true;
+  }
 };
+
+struct hasMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
+  bool isEmpty{true};
+
+  template <typename Predicate, typename Iter>
+  void operator()(Predicate &matches, Iter i, Iter e,
+                  MetaobjectAccessibility access) {
+
+    while (i != e) {
+      if (isAccessible(*i, access) && matches(*i)) {
+          isEmpty = false;
+          break;
+      }
+      ++i;
+    }
+  }
+};
+
+bool UnaryMetaobjectOpExpr::opIsEmpty(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  hasMatchingMetaobjSeqElements action;
+  applyOnMetaobjSeqElements(Ctx, action, REE);
+  return action.isEmpty;
+}
 
 struct countMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
   uint64_t count{0ULL};
@@ -3459,10 +3685,12 @@ struct findMatchingMetaobjSeqElement : matchingMetaobjSeqElementUtils {
     void *rptr;
     const Decl *decl;
     const CXXBaseSpecifier *base;
+    const LambdaCapture *capture;
   } result;
 
   void storeResult(const Decl *d) { result.decl = d; }
   void storeResult(const CXXBaseSpecifier &b) { result.base = &b; }
+  void storeResult(const LambdaCapture &c) { result.capture = &c; }
 
   findMatchingMetaobjSeqElement(unsigned idx) : index(idx) {
     result.rptr = nullptr;
@@ -3491,6 +3719,7 @@ struct collectMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
 
   void pushElement(const Decl *d) { elements.push_back(d); }
   void pushElement(const CXXBaseSpecifier &b) { elements.push_back(&b); }
+  void pushElement(const LambdaCapture &c) { elements.push_back(&c); }
 
   collectMatchingMetaobjSeqElements(void) { elements.reserve(8); }
 
@@ -3522,6 +3751,14 @@ void UnaryMetaobjectOpExpr::unpackSequence(ASTContext &Ctx, ReflexprIdExpr *REE,
 
       ReflexprIdExpr *REE =
         ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(Ctx, B);
+      dest.push_back(makeMetaobjectResult(Ctx, REE));
+    }
+  } else if (REE->getSeqKind() == MOSK_Captures) {
+    for (const void *E : action.elements) {
+      const LambdaCapture *C = static_cast<const LambdaCapture *>(E);
+
+      ReflexprIdExpr *REE =
+        ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(Ctx, C);
       dest.push_back(makeMetaobjectResult(Ctx, REE));
     }
   } else {
@@ -3640,7 +3877,7 @@ bool UnaryMetaobjectOpExpr::hasPtrResult() const {
   return getResultKind() == MOOR_Pointer;
 }
 
-const ValueDecl *UnaryMetaobjectOpExpr::getValueDeclResult(
+const ValueDecl *UnaryMetaobjectOpExpr::getResultValueDecl(
   ASTContext &Ctx, UnaryMetaobjectOp MoOp, ReflexprIdExpr *REE) {
   assert(REE);
 
@@ -3655,10 +3892,10 @@ const ValueDecl *UnaryMetaobjectOpExpr::getValueDeclResult(
   llvm_unreachable("Failed to get value declaration from metaobject!");
 }
 
-const ValueDecl *UnaryMetaobjectOpExpr::getValueDeclResult(
+const ValueDecl *UnaryMetaobjectOpExpr::getResultValueDecl(
     ASTContext &Ctx, void *EvlInfo) const {
   if (ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, EvlInfo)) {
-    return getValueDeclResult(Ctx, getKind(), REE);
+    return getResultValueDecl(Ctx, getKind(), REE);
   }
   llvm_unreachable("Failed to query Metaobject information!");
 }
@@ -3678,26 +3915,26 @@ bool UnaryMetaobjectOpExpr::hasOpResultType() const {
 
 QualType UnaryMetaobjectOpExpr::getValueDeclType(ASTContext &Ctx,
                                                  UnaryMetaobjectOp MoOp,
-                                                 const ValueDecl *valDecl,
-                                                 bool isDependent) {
+                                                 const ValueDecl *valDecl) {
   assert(valDecl != nullptr);
 
   QualType result;
 
   if (MoOp == UMOO_GetPointer) {
     if (const VarDecl *varDecl = dyn_cast<VarDecl>(valDecl)) {
-      if (isDependent)
-        result = Ctx.DependentTy;
-      else
-        result = Ctx.getPointerType(varDecl->getType());
+      result = Ctx.getPointerType(varDecl->getType());
     } else if (const FieldDecl *fldDecl = dyn_cast<FieldDecl>(valDecl)) {
       const RecordDecl *RD = fldDecl->getParent();
       QualType RecTy = Ctx.getRecordType(RD);
       result = Ctx.getMemberPointerType(fldDecl->getType(), RecTy.getTypePtr());
     } else if (const CXXMethodDecl *mthdDecl = dyn_cast<CXXMethodDecl>(valDecl)) {
-      const RecordDecl *RD = mthdDecl->getParent();
-      QualType RecTy = Ctx.getRecordType(RD);
-      result = Ctx.getMemberPointerType(mthdDecl->getType(), RecTy.getTypePtr());
+      if (mthdDecl->isStatic()) {
+        result = Ctx.getPointerType(mthdDecl->getType());
+      } else {
+        const RecordDecl *RD = mthdDecl->getParent();
+        QualType RecTy = Ctx.getRecordType(RD);
+        result = Ctx.getMemberPointerType(mthdDecl->getType(), RecTy.getTypePtr());
+      }
     }
   } else if (MoOp == UMOO_GetConstant) {
     result = valDecl->getType();
@@ -3713,7 +3950,6 @@ Stmt::child_range UnaryMetaobjectOpExpr::children() {
 QualType NaryMetaobjectOpExpr::getResultKindType(ASTContext &Ctx,
                                                  NaryMetaobjectOp Oper,
                                                  MetaobjectOpResult OpRes,
-                                                 bool inUnrefltype,
                                                  unsigned arity, Expr **argExpr) {
   switch (OpRes) {
   case MOOR_Metaobject:
@@ -3756,11 +3992,10 @@ NaryMetaobjectOpExpr::NaryMetaobjectOpExpr(ASTContext &Ctx,
 
 NaryMetaobjectOpExpr *
 NaryMetaobjectOpExpr::Create(ASTContext &Ctx, NaryMetaobjectOp Oper,
-                             MetaobjectOpResult OpRes, bool inUnrefltype,
+                             MetaobjectOpResult OpRes,
                              unsigned arity, Expr **argExpr,
                              SourceLocation opLoc, SourceLocation endLoc) {
-  QualType resType =
-      getResultKindType(Ctx, Oper, OpRes, inUnrefltype, arity, argExpr);
+  QualType resType = getResultKindType(Ctx, Oper, OpRes, arity, argExpr);
 
   return new (Ctx) NaryMetaobjectOpExpr(Ctx, Oper, OpRes, resType,
                                         arity, argExpr, opLoc, endLoc);
@@ -3796,6 +4031,9 @@ bool NaryMetaobjectOpExpr::opReflectsSame(ASTContext &Ctx,
   if (REE1 == REE2)
     return true;
 
+  if (REE1->isArgumentEmpty() && REE2->isArgumentEmpty())
+    return true;
+
   if (REE1->isArgumentGlobalScope() && REE2->isArgumentGlobalScope())
     return true;
 
@@ -3816,8 +4054,8 @@ bool NaryMetaobjectOpExpr::opReflectsSame(ASTContext &Ctx,
       if (ND1->getDeclContext()->getRedeclContext()->Equals(
               ND2->getDeclContext()->getRedeclContext())) {
         if (ND1->getKind() == ND2->getKind()) {
-          // [reflection-ts] FIXME
-          return true;
+          // [reflection-ts] FIXME: fully qualified name or something else?
+          return ND1->getName() == ND2->getName();
         }
       }
     }
@@ -3841,13 +4079,18 @@ ReflexprIdExpr *NaryMetaobjectOpExpr::opGetElement(ASTContext &Ctx,
 
   findMatchingMetaobjSeqElement action(idx);
   applyOnMetaobjSeqElements(Ctx, action, REE);
-  assert(action.result.decl || action.result.base);
+  assert(action.result.decl || action.result.base || action.result.capture);
 
   if (REE->getSeqKind() == MOSK_BaseClasses) {
     const CXXBaseSpecifier *BS = action.result.base;
     assert(BS != nullptr);
 
     return ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(Ctx, BS);
+  } else if (REE->getSeqKind() == MOSK_Captures) {
+    const LambdaCapture *LC = action.result.capture;
+    assert(LC != nullptr);
+
+    return ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(Ctx, LC);
   } else {
     const NamedDecl *ND = dyn_cast<NamedDecl>(action.result.decl);
     assert(ND != nullptr);

@@ -406,7 +406,8 @@ private:
             T == TST_underlyingType || T == TST_atomic);
   }
   static bool isExprRep(TST T) {
-    return (T == TST_typeofExpr || T == TST_decltype || T == TST_bitint);
+    return (T == TST_typeofExpr || T == TST_decltype ||
+            T == TST_unrefltype || T == TST_bitint);
   }
   static bool isTemplateIdRep(TST T) {
     return (T == TST_auto || T == TST_decltype_auto);

@@ -20,6 +20,7 @@ namespace clang {
   // [reflection-ts] FIXME This needs to be fixed to match the TS wording
   // When updating this also update METAOBJECT_TRAIT in TokenKinds.def
   enum MetaobjectConcept  {
+    MOC_Nothing                     = 0,
     MOC_Object                      = (1UL <<  0U),
     MOC_ObjectSequence              = (1UL <<  1U) | MOC_Object,
     MOC_Named                       = (1UL <<  2U) | MOC_Object,
@@ -35,8 +36,8 @@ namespace clang {
     MOC_RecordMember                = (1UL << 12U) | MOC_ScopeMember,
     MOC_Alias                       = (1UL << 13U) | MOC_Named,
     MOC_FunctionParameter           = (1UL << 14U) | MOC_Typed | MOC_ScopeMember,
-    MOC_Namespace                   = (1UL << 15U) | MOC_Scope | MOC_ScopeMember,
-    MOC_GlobalScope                 = (1UL << 16U) | MOC_Namespace,
+    MOC_Namespace                   = (1UL << 15U) | MOC_Scope,
+    MOC_GlobalScope                 = (1UL << 16U) | MOC_Named | MOC_Namespace,
     MOC_TemplateParameterScope      = (1UL << 17U) | MOC_Scope,
     MOC_Type                        = (1UL << 18U) | MOC_Named,
     MOC_TemplateTypeParameter       = (1UL << 19U) | MOC_Type | MOC_Alias,
@@ -58,6 +59,7 @@ namespace clang {
     MOC_FunctionCallExpression      = (1UL << 35U) | MOC_Expression,
     MOC_FunctionalTypeConversion    = (1UL << 36U) | MOC_Expression,
     MOC_Specifier                   = (1UL << 37U) | MOC_Named,
+    MOC_NamespaceScope              = MOC_Namespace | MOC_ScopeMember,
     MOC_NamespaceAlias              = MOC_Namespace | MOC_Alias,
     MOC_TypeAlias                   = MOC_Type | MOC_Alias | MOC_ScopeMember,
     MOC_EnumAlias                   = MOC_Enum | MOC_Alias,
@@ -65,7 +67,11 @@ namespace clang {
     MOC_RecordAlias                 = MOC_Record | MOC_Alias,
     MOC_LambdaAlias                 = MOC_Lambda | MOC_Alias,
     MOC_ClassAlias                  = MOC_Class | MOC_Alias,
+    MOC_TemplateClass               = MOC_Class | MOC_TemplateParameterScope,
     MOC_NamedFunction               = MOC_Named | MOC_Function,
+    MOC_TemplateFunction            = MOC_Function | MOC_TemplateParameterScope,
+    MOC_NamedTemplateFunction       = MOC_NamedFunction | MOC_TemplateParameterScope,
+    MOC_ScopedType                  = MOC_ScopeMember | MOC_Type,
     MOC_DataMember                  = MOC_RecordMember | MOC_Variable,
     MOC_MemberType                  = MOC_RecordMember | MOC_Type,
     MOC_MemberTypeAlias             = MOC_RecordMember | MOC_TypeAlias,
@@ -82,11 +88,12 @@ namespace clang {
 
   // When updating this also update ReflexprIdExprBitfields
   enum MetaobjectKind {
-    MOK_Object = 0,
+    MOK_Nothing = 0,
+    MOK_Object,
     MOK_ObjectSequence,
     MOK_Base,
     MOK_Specifier,
-    MOK_Namespace,
+    MOK_NamespaceScope,
     MOK_GlobalScope,
     MOK_TemplateParameterScope,
     MOK_Type,
@@ -108,9 +115,11 @@ namespace clang {
     MOK_RecordAlias,
     MOK_LambdaAlias,
     MOK_ClassAlias,
+    MOK_TemplateClass,
     MOK_Variable,
     MOK_LambdaCapture,
     MOK_FunctionParameter,
+    MOK_ScopedType,
     MOK_DataMember,
     MOK_MemberType,
     MOK_MemberTypeAlias,
@@ -138,6 +147,7 @@ namespace clang {
     MOSK_Operators,
     MOSK_BaseClasses,
     MOSK_Parameters,
+    MOSK_Captures,
     MOSK_All
   };
 
@@ -208,6 +218,9 @@ namespace clang {
     UMOO_IsUnion,
     UMOO_UsesClassKey,
     UMOO_UsesStructKey,
+    UMOO_UsesDefaultCopyCapture,
+    UMOO_UsesDefaultReferenceCapture,
+    UMOO_IsCallOperatorConst,
     UMOO_GetEnumerators,
     UMOO_GetPublicBaseClasses,
     UMOO_GetMemberTypes,
@@ -218,9 +231,11 @@ namespace clang {
     UMOO_GetPublicMemberFunctions,
     UMOO_GetConstructors,
     UMOO_GetDestructors,
+    UMOO_GetDestructor,
     UMOO_GetOperators,
     UMOO_GetBaseClasses,
     UMOO_GetParameters,
+    UMOO_GetCaptures,
     UMOO_GetClass,
     UMOO_GetAccessSpecifier,
     UMOO_IsConstexpr,
@@ -243,6 +258,7 @@ namespace clang {
     UMOO_HidePrivate,
     UMOO_GetPointer,
     UMOO_GetConstant,
+    UMOO_IsEmpty,
     UMOO_GetSize
   };
 

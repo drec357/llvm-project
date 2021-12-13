@@ -1717,6 +1717,11 @@ ReflexprIdExpr* ASTContext::decodeMetaobject(const llvm::APInt& MoId) {
   return reinterpret_cast<ReflexprIdExpr*>(MoId.getZExtValue());
 }
 
+ReflexprIdExpr* ASTContext::cacheEmptyReflexpr(ReflexprIdExpr *E) {
+  assert(!EmptyReflexpr);
+  return EmptyReflexpr = E;
+}
+
 ReflexprIdExpr* ASTContext::cacheGlobalScopeReflexpr(ReflexprIdExpr *E) {
   assert(!GlobalScopeReflexpr);
   return GlobalScopeReflexpr = E;

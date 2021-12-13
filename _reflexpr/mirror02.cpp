@@ -5,38 +5,23 @@ enum class weekdays : int {
   monday, tuesday, wednesday, thursday, friday, saturday, sunday
 };
 
-template <typename E>
-std::string_view enum_to_string(E e) {
-  return select(get_enumerators(mirror(E)),
-    [](auto& result, auto mo, auto e) {
-      if (get_constant(mo) == e) {
-        result = get_name(mo);
-      }
-    }, std::string_view{}, e);
+static weekdays next_day(weekdays d) {
+  return weekdays((int(d) + 1) % 7);
 }
 
-template <typename E>
-E string_to_enum(std::string_view n) {
-  return select(get_enumerators(mirror(E)),
-    [](auto& result, auto mo, auto n) {
-      if (std::string_view{get_name(mo)} == n) {
-        result = E(get_constant(mo));
-      }
-    }, E{}, n);
-}
-
-static void next_day(std::string_view n) {
-  auto d = string_to_enum<weekdays>(n);
+static void print_next_day(std::string_view n) {
+  namespace m = std::experimental::mirror;
+  auto d = m::string_to_enum<weekdays>(n);
   std::cout << n 
             << " -> "
-            << enum_to_string(weekdays((int(d) + 1) % 7))
+            << m::enum_to_string(next_day(d))
             << std::endl;
 }
 
 int main() {
-  using namespace std::experimental::mirror;
-  for_each(get_enumerators(mirror(weekdays)), [](auto mo){
-      next_day(get_name(mo));
+  namespace m = std::experimental::mirror;
+  m::for_each(m::get_enumerators(mirror(weekdays)), [](auto mo){
+      print_next_day(m::get_name(mo));
     });
 
   return 0;

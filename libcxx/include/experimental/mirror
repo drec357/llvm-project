@@ -14,7 +14,6 @@
 
 #include <experimental/__config>
 #include <__debug>
-#include <array>
 #include <type_traits>
 #include <string_view>
 
@@ -47,157 +46,175 @@ template <__metaobject_id _Mp>
 struct metaobject {};
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_object(metaobject<_Mp>) {
+consteval bool reflects_object(metaobject<_Mp>) {
   return __metaobject_is_meta_object(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_object_sequence(metaobject<_Mp>) {
+consteval bool reflects_object_sequence(metaobject<_Mp>) {
   return __metaobject_is_meta_object_sequence(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_named(metaobject<_Mp>) {
+consteval bool reflects_named(metaobject<_Mp>) {
   return __metaobject_is_meta_named(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_alias(metaobject<_Mp>) {
+consteval bool reflects_alias(metaobject<_Mp>) {
   return __metaobject_is_meta_alias(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_scope(metaobject<_Mp>) {
+consteval bool reflects_scope(metaobject<_Mp>) {
   return __metaobject_is_meta_scope(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_typed(metaobject<_Mp>) {
+consteval bool reflects_typed(metaobject<_Mp>) {
   return __metaobject_is_meta_typed(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_scope_member(metaobject<_Mp>) {
+consteval bool reflects_scope_member(metaobject<_Mp>) {
   return __metaobject_is_meta_scope_member(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_enumerator(metaobject<_Mp>) {
+consteval bool reflects_global_scope_member(metaobject<_Mp>) {
+  if constexpr (__metaobject_is_meta_scope_member(_Mp)) {
+    return __metaobject_is_meta_global_scope(__metaobject_get_scope(_Mp));
+  } else {
+    return false;
+  }
+}
+
+template <__metaobject_id _Mp>
+consteval bool reflects_enumerator(metaobject<_Mp>) {
   return __metaobject_is_meta_enumerator(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_record_member(metaobject<_Mp>) {
+consteval bool reflects_record_member(metaobject<_Mp>) {
   return __metaobject_is_meta_record_member(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_base(metaobject<_Mp>) {
+consteval bool reflects_base(metaobject<_Mp>) {
   return __metaobject_is_meta_base(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_namespace(metaobject<_Mp>) {
+consteval bool reflects_namespace(metaobject<_Mp>) {
   return __metaobject_is_meta_namespace(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_global_scope(metaobject<_Mp>) {
+consteval bool reflects_inline_namespace(metaobject<_Mp>) {
+  if constexpr (__metaobject_is_meta_namespace(_Mp)) {
+    return __metaobject_is_inline(_Mp);
+  } else {
+    return false;
+  }
+}
+
+template <__metaobject_id _Mp>
+consteval bool reflects_global_scope(metaobject<_Mp>) {
   return __metaobject_is_meta_global_scope(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_type(metaobject<_Mp>) {
+consteval bool reflects_type(metaobject<_Mp>) {
   return __metaobject_is_meta_type(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_enum(metaobject<_Mp>) {
+consteval bool reflects_enum(metaobject<_Mp>) {
   return __metaobject_is_meta_enum(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_record(metaobject<_Mp>) {
+consteval bool reflects_record(metaobject<_Mp>) {
   return __metaobject_is_meta_record(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_class(metaobject<_Mp>) {
+consteval bool reflects_class(metaobject<_Mp>) {
   return __metaobject_is_meta_class(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_lambda(metaobject<_Mp>) {
+consteval bool reflects_lambda(metaobject<_Mp>) {
   return __metaobject_is_meta_lambda(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_constant(metaobject<_Mp>) {
+consteval bool reflects_constant(metaobject<_Mp>) {
   return __metaobject_is_meta_constant(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_variable(metaobject<_Mp>) {
+consteval bool reflects_variable(metaobject<_Mp>) {
   return __metaobject_is_meta_variable(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_lambda_capture(metaobject<_Mp>) {
+consteval bool reflects_lambda_capture(metaobject<_Mp>) {
   return __metaobject_is_meta_lambda_capture(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_function_parameter(metaobject<_Mp>) {
+consteval bool reflects_function_parameter(metaobject<_Mp>) {
   return __metaobject_is_meta_function_parameter(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_callable(metaobject<_Mp>) {
+consteval bool reflects_callable(metaobject<_Mp>) {
   return __metaobject_is_meta_callable(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_function(metaobject<_Mp>) {
+consteval bool reflects_function(metaobject<_Mp>) {
   return __metaobject_is_meta_function(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_member_function(metaobject<_Mp>) {
+consteval bool reflects_member_function(metaobject<_Mp>) {
   return __metaobject_is_meta_member_function(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_special_member_function(metaobject<_Mp>) {
+consteval bool reflects_special_member_function(metaobject<_Mp>) {
   return __metaobject_is_meta_special_member_function(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_constructor(metaobject<_Mp>) {
+consteval bool reflects_constructor(metaobject<_Mp>) {
   return __metaobject_is_meta_constructor(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_destructor(metaobject<_Mp>) {
+consteval bool reflects_destructor(metaobject<_Mp>) {
   return __metaobject_is_meta_destructor(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_operator(metaobject<_Mp>) {
+consteval bool reflects_operator(metaobject<_Mp>) {
   return __metaobject_is_meta_operator(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_conversion_operator(metaobject<_Mp>) {
+consteval bool reflects_conversion_operator(metaobject<_Mp>) {
   return __metaobject_is_meta_conversion_operator(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_expression(metaobject<_Mp>) {
+consteval bool reflects_expression(metaobject<_Mp>) {
   return __metaobject_is_meta_expression(_Mp);
 }
 
 template <__metaobject_id _Mp>
-consteval bool is_meta_specifier(metaobject<_Mp>) {
+consteval bool reflects_specifier(metaobject<_Mp>) {
   return __metaobject_is_meta_specifier(_Mp);
 }
 
@@ -311,6 +328,24 @@ consteval bool uses_struct_key(metaobject<_Mp>) {
 }
 
 template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_lambda(_Mp)>>
+consteval bool uses_default_copy_capture(metaobject<_Mp>) {
+  return __metaobject_uses_default_copy_capture(_Mp);
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_lambda(_Mp)>>
+consteval bool uses_default_reference_capture(metaobject<_Mp>) {
+  return __metaobject_uses_default_reference_capture(_Mp);
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_lambda(_Mp)>>
+consteval bool is_call_operator_const(metaobject<_Mp>) {
+  return __metaobject_is_call_operator_const(_Mp);
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_member_function(_Mp)>>
 consteval bool is_const(metaobject<_Mp>) {
   return __metaobject_is_const(_Mp);
@@ -332,6 +367,11 @@ template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_member_function(_Mp)>>
 consteval bool has_rvalueref_qualifier(metaobject<_Mp>) {
   return __metaobject_has_rvalueref_qualifier(_Mp);
+}
+
+template <__metaobject_id _Ml, __metaobject_id _Mr>
+consteval bool reflects_same(metaobject<_Ml>, metaobject<_Mr>) {
+  return __metaobject_reflects_same(_Ml, _Mr);
 }
 
 // integer
@@ -401,6 +441,38 @@ constexpr auto get_constant(metaobject<_Mp>) {
   return _get_constant<_Mp>::value;
 }
 
+template <__metaobject_id _Mp, typename _Cp, typename ... _Ap,
+  typename = enable_if_t<__metaobject_is_meta_member_function(_Mp)>>
+constexpr auto invoke_on(metaobject<_Mp> mo, _Cp& obj, _Ap&&... args) {
+  if constexpr(is_static(mo)) {
+    return (*_get_pointer<_Mp>::value)(std::forward<_Ap>(args)...);
+  } else {
+    return (obj.*_get_pointer<_Mp>::value)(std::forward<_Ap>(args)...);
+  }
+}
+
+template <__metaobject_id _Mp, typename ... _Ap, typename = enable_if_t<
+  __metaobject_is_meta_function(_Mp) ||
+  (__metaobject_is_meta_member_function(_Mp) && __metaobject_is_static(_Mp))>>
+constexpr auto invoke(metaobject<_Mp>, _Ap&&... args) {
+  return (*_get_pointer<_Mp>::value)(std::forward<_Ap>(args)...);
+}
+
+template <__metaobject_id _Mp, typename _Cp, typename ... _Ap,
+  typename = enable_if_t<
+    __metaobject_is_meta_member_function(_Mp) && !__metaobject_is_static(_Mp)>>
+constexpr auto invoke(metaobject<_Mp>, _Cp& obj, _Ap&&... args) {
+  return (obj.*_get_pointer<_Mp>::value)(std::forward<_Ap>(args)...);
+}
+
+template <__metaobject_id _Mp, typename ... _Ap>
+constexpr std::enable_if_t<
+  __metaobject_is_meta_constructor(_Mp),
+  __unrefltype(__metaobject_get_scope(_Mp))>
+invoke(metaobject<_Mp>, _Ap&&... args) {
+  return __unrefltype(__metaobject_get_scope(_Mp))(std::forward<_Ap>(args)...);
+}
+
 template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_object_sequence(_Mp)>>
 consteval size_t get_size(metaobject<_Mp>) {
@@ -466,6 +538,15 @@ constexpr auto get_aliased(metaobject<_Mp>) {
   return metaobject<__metaobject_get_aliased(_Mp)>{};
 }
 
+template <__metaobject_id _Mp>
+constexpr auto remove_all_aliases(metaobject<_Mp> mo) {
+  if constexpr (__metaobject_is_meta_alias(_Mp)) {
+    return remove_all_aliases(metaobject<__metaobject_get_aliased(_Mp)>{});
+  } else {
+    return mo;
+  }
+}
+
 template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_base(_Mp)>>
 constexpr auto get_class(metaobject<_Mp>) {
@@ -491,6 +572,30 @@ constexpr auto get_data_members(metaobject<_Mp>) {
 }
 
 template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_record(_Mp)>>
+constexpr auto get_member_functions(metaobject<_Mp>) {
+  return metaobject<__metaobject_get_member_functions(_Mp)>{};
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_record(_Mp)>>
+constexpr auto get_constructors(metaobject<_Mp>) {
+  return metaobject<__metaobject_get_constructors(_Mp)>{};
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_record(_Mp)>>
+constexpr auto get_destructors(metaobject<_Mp>) {
+  return metaobject<__metaobject_get_destructors(_Mp)>{};
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_record(_Mp)>>
+constexpr auto get_operators(metaobject<_Mp>) {
+  return metaobject<__metaobject_get_operators(_Mp)>{};
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_enum(_Mp)>>
 constexpr auto get_enumerators(metaobject<_Mp>) {
   return metaobject<__metaobject_get_enumerators(_Mp)>{};
@@ -500,6 +605,12 @@ template <__metaobject_id _Mp, typename = enable_if_t<
   __metaobject_is_meta_callable(_Mp)>>
 constexpr auto get_parameters(metaobject<_Mp>) {
   return metaobject<__metaobject_get_parameters(_Mp)>{};
+}
+
+template <__metaobject_id _Mp, typename = enable_if_t<
+  __metaobject_is_meta_lambda(_Mp)>>
+constexpr auto get_captures(metaobject<_Mp>) {
+  return metaobject<__metaobject_get_captures(_Mp)>{};
 }
 
 template <size_t _I, __metaobject_id _Mp, typename = enable_if_t<
@@ -544,9 +655,41 @@ select(metaobject<_Mp> mo, _Fp function, _Tp fallback, _Pp&&... param) {
                 std::forward<_Pp>(param)...);
 }
 
+// type unreflection
+template <__metaobject_id _Mp>
+struct get_reflected_type : type_identity<__unrefltype(_Mp)> {};
 
+template <__metaobject_id _Mp>
+consteval auto get_reflected_type_id(metaobject<_Mp>) {
+  return get_reflected_type<_Mp>{};
+}
+
+// reflection "operator"
 #define mirror(...) \
   _VSTD_EXPERIMENTAL::mirror::metaobject<__reflexpr_id(__VA_ARGS__)>{}
+
+// higher-level utilities
+// enum-to-string / string-to-enum
+
+template <typename E>
+string_view enum_to_string(E e) {
+  return select(get_enumerators(mirror(E)),
+    [](auto& result, auto mo, auto e) {
+      if (get_constant(mo) == e) {
+        result = get_name(mo);
+      }
+    }, string_view{}, e);
+}
+
+template <typename E>
+E string_to_enum(string_view s) {
+  return select(get_enumerators(mirror(E)),
+    [](auto& result, auto mo, auto s) {
+      if (get_name(mo) == s) {
+        result = get_constant(mo);
+      }
+    }, E{}, s);
+}
 
 } // namespace mirror
 _LIBCPP_END_NAMESPACE_EXPERIMENTAL

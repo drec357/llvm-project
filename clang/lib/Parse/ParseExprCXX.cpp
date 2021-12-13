@@ -3775,8 +3775,8 @@ ExprResult Parser::ParseReflexprExpression(bool idOnly) {
   if (Tok.is(tok::r_paren)) {
     // ()
     Parens.consumeClose();
-    return Actions.ActOnReflexprGlobalScopeExpr(idOnly, OpTok.getLocation(),
-                                                Parens.getRange());
+    return Actions.ActOnReflexprNoExpr(idOnly, OpTok.getLocation(),
+                                       Parens.getRange());
   } else {
     // (::)
     if (Tok.is(tok::coloncolon)) {

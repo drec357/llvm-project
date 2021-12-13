@@ -295,6 +295,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable TypeInfoMap MemoizedTypeInfo;
 
   // [reflection-ts]
+  ReflexprIdExpr* EmptyReflexpr = nullptr;
   ReflexprIdExpr* GlobalScopeReflexpr = nullptr;
   ReflexprIdExpr* NoSpecifierReflexpr = nullptr;
   using SpecifierReflexprMap = llvm::DenseMap<unsigned, ReflexprIdExpr*>;
@@ -2263,6 +2264,10 @@ public:
   llvm::APInt encodeMetaobject(const ReflexprIdExpr*);
   ReflexprIdExpr* decodeMetaobject(const llvm::APInt&);
 
+  ReflexprIdExpr* cacheEmptyReflexpr(ReflexprIdExpr *E);
+  ReflexprIdExpr* findEmptyReflexpr() const {
+    return EmptyReflexpr;
+  }
   ReflexprIdExpr* cacheGlobalScopeReflexpr(ReflexprIdExpr *E);
   ReflexprIdExpr* findGlobalScopeReflexpr() const {
     return GlobalScopeReflexpr;

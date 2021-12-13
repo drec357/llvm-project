@@ -787,10 +787,14 @@ void ASTStmtReader::VisitReflexprIdExpr(ReflexprIdExpr *E) {
     case ReflexprIdExpr::REAK_TypeInfo:
       E->setArgumentTypeInfo(readTypeSourceInfo());
       break;
-    case ReflexprIdExpr::REAK_BaseSpecifier:
+    case ReflexprIdExpr::REAK_BaseSpecifier: {
       CXXBaseSpecifier *BaseSpec = new (Record.getContext()) CXXBaseSpecifier;
       *BaseSpec = Record.readCXXBaseSpecifier();
       E->setArgumentBaseSpecifier(BaseSpec);
+      break;
+    }
+    case ReflexprIdExpr::REAK_Capture:
+      // [reflection-ts] FIXME
       break;
   }
   E->setAccessibility(MetaobjectAccessibility(Record.readInt()));

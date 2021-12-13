@@ -3480,14 +3480,7 @@ checkBuiltinTemplateIdType(Sema &SemaRef, BuiltinTemplateDecl *BTD,
     llvm::APInt MoId = MoIdArg.getAsMetaobjectId();
 
     ReflexprIdExpr *REE = ReflexprIdExpr::fromMetaobjectId(Context, MoId);
-    if (REE) {
-      if (!REE->reflectsType()) {
-        SourceLocation argLoc = TemplateArgs[1].getLocation(); 
-        SemaRef.Diag(argLoc, diag::err_unpack_metaobject_seq_not_applicable)
-          << REE->getMetaobjectKindName(REE->getKind());
-        return QualType();
-      }
-    } else {
+    if (!REE) {
       SourceLocation argLoc = TemplateArgs[1].getLocation(); 
       SemaRef.Diag(argLoc, diag::err_expected_metaobject_id_expr);
       return QualType();

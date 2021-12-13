@@ -2222,6 +2222,12 @@ private:
     return ModuleScopes.empty() ? nullptr : ModuleScopes.back().Module;
   }
 
+  /// Helper function to judge if we are in module purview.
+  /// Return false if we are not in a module.
+  bool isCurrentModulePurview() const {
+    return getCurrentModule() ? getCurrentModule()->isModulePurview() : false;
+  }
+
   /// Enter the scope of the global module.
   Module *PushGlobalModuleFragment(SourceLocation BeginLoc, bool IsImplicit);
   /// Leave the scope of the global module.
@@ -5346,6 +5352,7 @@ public:
   // [reflection-ts]
   ExprResult OptionallyWrapReflexprExpr(bool idOnly, ExprResult E);
 
+  ExprResult GetReflexprNoExpr(SourceLocation opLoc, SourceLocation endLoc);
   ExprResult GetReflexprGlobalScopeExpr(SourceLocation opLoc, SourceLocation endLoc);
   ExprResult GetReflexprSpecExpr(tok::TokenKind SpecTok, SourceLocation opLoc,
                                  SourceLocation endLoc);
@@ -5357,6 +5364,8 @@ public:
   ExprResult GetReflexprTypeExpr(QualType Ty, bool removeSugar,
                                  SourceLocation opLoc, SourceLocation endLoc);
 
+  ExprResult ActOnReflexprNoExpr(bool idOnly, SourceLocation opLoc,
+                                 SourceRange argRange);
   ExprResult ActOnReflexprGlobalScopeExpr(bool idOnly, SourceLocation opLoc,
                                           SourceRange argRange);
   ExprResult ActOnReflexprSpecExpr(bool idOnly, tok::TokenKind SpecTok,

@@ -5,16 +5,6 @@ enum class weekdays : int {
   monday = 1, tuesday, wednesday, thursday, friday, saturday, sunday
 };
 
-template <typename E>
-static std::string_view enum_to_string(E e) {
-  return select(get_enumerators(get_aliased(mirror(E))),
-    [](auto& result, auto mo, auto e) {
-      if (get_constant(mo) == e) {
-        result = get_name(mo);
-      }
-    }, std::string_view{}, e);
-}
-
 int main() {
   using namespace std::experimental::mirror;
   for_each(get_enumerators(mirror(weekdays)), [](auto mo){

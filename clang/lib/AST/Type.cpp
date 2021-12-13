@@ -3485,9 +3485,12 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
 
 UnrefltypeType::UnrefltypeType(Expr *E, QualType underlyingType, QualType can)
   // [reflecion-ts] FIXME: is the depencence right?
-  : Type(Unrefltype, can, E->getType()->getDependence()),
+  : Type(Unrefltype, can,
+         toTypeDependence(E->getDependence()) |
+             (E->isInstantiationDependent() ? TypeDependence::Dependent
+                                            : TypeDependence::None)),
     E(E),
-  UnderlyingType(underlyingType) {
+    UnderlyingType(underlyingType) {
 }
 
 bool UnrefltypeType::isSugared() const {

@@ -9049,7 +9049,7 @@ QualType Sema::BuildDecltypeType(Expr *E, bool AsUnevaluated) {
 }
 
 static QualType getUnrefltypeForExpr(Sema &S, Expr *E, SourceLocation Loc) {
-  if (E->isInstantiationDependent() || E->isValueDependent())
+  if (E->isValueDependent())
     return S.Context.DependentTy;
 
   if (ReflexprIdExpr *REE = ReflexprIdExpr::fromExpr(S.Context, E)) {

@@ -55,6 +55,10 @@ New Features
   behavior of standard algorithms (e.g. equal elements in ``std::sort`` or
   randomization of both sides of partition for ``std::nth_element``)
 
+- Floating-point support for ``std::to_chars`` support has been added.
+  Thanks to Stephan T. Lavavej and Microsoft for providing their implemention
+  to libc++.
+
 API Changes
 -----------
 
@@ -157,3 +161,9 @@ Build System Changes
   .. code-block:: bash
 
       -DLLVM_RUNTIME_TARGETS=i386-unknown-linux
+
+- Libc++, libc++abi and libunwind will not be built with ``-fPIC`` by default anymore.
+  If you want to build those runtimes with position independent code, please specify
+  ``-DCMAKE_POSITION_INDEPENDENT_CODE=ON`` explicitly when configuring the build, or
+  ``-DRUNTIMES_<target-name>_CMAKE_POSITION_INDEPENDENT_CODE=ON`` if using the
+  bootstrapping build.

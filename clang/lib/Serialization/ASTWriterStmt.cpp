@@ -799,6 +799,9 @@ void ASTStmtWriter::VisitReflexprIdExpr(ReflexprIdExpr *E) {
     case ReflexprIdExpr::REAK_BaseSpecifier:
       Record.AddCXXBaseSpecifier(*E->getArgumentBaseSpecifier());
       break;
+    case ReflexprIdExpr::REAK_Capture:
+      // [reflection-ts] FIXME
+      break;
   }
   Record.push_back(E->getAccessibility());
   Record.push_back(E->getRemoveSugar());
