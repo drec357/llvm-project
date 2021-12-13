@@ -105,6 +105,7 @@ namespace {
     KEYCOROUTINES = 0x80000,
     KEYMODULES    = 0x100000,
     KEYCXX20      = 0x200000,
+    KEYTEMPLATEFOR= 0x8000000,
     KEYOPENCLCXX  = 0x400000,
     KEYMSCOMPAT   = 0x800000,
     KEYSTRINGINJ  = 0x4000000,
@@ -160,6 +161,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
   if (LangOpts.CPlusPlus && !LangOpts.CPlusPlus20 && (Flags & CHAR8SUPPORT))
     return KS_Future;
+  if (LangOpts.TemplateFor && (Flags & KEYTEMPLATEFOR)) return KS_Extension;
   if (LangOpts.isSYCL() && (Flags & KEYSYCL))
     return KS_Enabled;
   return KS_Disabled;

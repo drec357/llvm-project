@@ -1077,6 +1077,26 @@ void ASTStmtReader::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   }
 }
 
+void ASTStmtReader::VisitCXXSelectExpr(CXXSelectExpr *E) {
+  VisitExpr(E);
+  E->setSelectLoc(readSourceLocation());
+  E->setRangeExpr(Record.readSubExpr());
+  E->setIndexExpr(Record.readSubExpr());
+  E->setSubstituteExpr(Record.readSubExpr());
+}
+
+void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitCXXSelectExpr(E);
+  E->Record = Record.readDeclAs<CXXRecordDecl>();
+  E->RecordLoc = readSourceLocation();
+  E->NumFields = Record.readInt();
+}
+
+void ASTStmtReader::VisitCXXSelectPackElemExpr(
+                                               CXXSelectPackElemExpr *E) {
+  VisitCXXSelectExpr(E);
+}
+
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   unsigned NumArgs = Record.readInt();
@@ -1745,6 +1765,33 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setInc(Record.readSubExpr());
   S->setLoopVarStmt(Record.readSubStmt());
   S->setBody(Record.readSubStmt());
+}
+
+void ASTStmtReader::VisitCXXExpansionStmt(
+                                             CXXExpansionStmt *S) {
+  VisitStmt(S);
+  S->TemplateForLoc = readSourceLocation();
+  S->ConstexprLoc = readSourceLocation();
+  S->ColonLoc = readSourceLocation();
+  S->StructLoc = readSourceLocation();
+  S->RParenLoc = readSourceLocation();
+  S->InductionVarTPL = Record.readTemplateParameterList();
+  S->setLoopVarStmt(Record.readSubStmt());
+  S->setBody(Record.readSubStmt());
+}
+
+void ASTStmtReader::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
+  S->setRangeStmt(Record.readSubStmt());
+  S->setBeginStmt(Record.readSubStmt());
+  S->setEndStmt(Record.readSubStmt());
+}
+
+void ASTStmtReader::VisitCXXPackExpansionStmt(
+                                             CXXPackExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
+  S->setRangeExprStmt(Record.readSubStmt());
 }
 
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
@@ -3277,6 +3324,14 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_CXX_FOR_RANGE:
       S = new (Context) CXXForRangeStmt(Empty);
+      break;
+
+    case STMT_CXX_PACK_EXPANSION:
+      S = CXXPackExpansionStmt::Create(Context, Empty);
+      break;
+
+    case STMT_CXX_COMP_EXPANSION:
+      S = CXXCompositeExpansionStmt::Create(Context, Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

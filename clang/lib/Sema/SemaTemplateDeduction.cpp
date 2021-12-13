@@ -4860,14 +4860,23 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
 
 QualType Sema::SubstAutoType(QualType TypeWithAuto,
                              QualType TypeToReplaceAuto) {
-  assert(TypeToReplaceAuto != Context.DependentTy);
+  if (TypeToReplaceAuto->isDependentType())
+    return SubstituteDeducedTypeTransform(
+               *this, DependentAuto{
+                          TypeToReplaceAuto->containsUnexpandedParameterPack()})
+        .TransformType(TypeWithAuto);
   return SubstituteDeducedTypeTransform(*this, TypeToReplaceAuto)
       .TransformType(TypeWithAuto);
 }
 
 TypeSourceInfo *Sema::SubstAutoTypeSourceInfo(TypeSourceInfo *TypeWithAuto,
                                               QualType TypeToReplaceAuto) {
-  assert(TypeToReplaceAuto != Context.DependentTy);
+  if (TypeToReplaceAuto->isDependentType())
+    return SubstituteDeducedTypeTransform(
+               *this,
+               DependentAuto{
+                   TypeToReplaceAuto->containsUnexpandedParameterPack()})
+        .TransformType(TypeWithAuto);
   return SubstituteDeducedTypeTransform(*this, TypeToReplaceAuto)
       .TransformType(TypeWithAuto);
 }

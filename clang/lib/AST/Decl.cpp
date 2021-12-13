@@ -2529,8 +2529,8 @@ bool VarDecl::checkForConstantInitialization(
   assert(!cast<Expr>(Eval->Value)->isValueDependent());
 
   // Evaluate the initializer to check whether it's a constant expression.
-  Eval->HasConstantInitialization =
-      evaluateValueImpl(Notes, true) && Notes.empty();
+  Eval->HasConstantInitialization = evaluateValueImpl(Notes, true) &&
+                                    Notes.empty();
 
   // If evaluation as a constant initializer failed, allow re-evaluation as a
   // non-constant initializer if we later find we want the value.

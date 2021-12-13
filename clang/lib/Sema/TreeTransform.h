@@ -2420,6 +2420,37 @@ public:
                                           RParenLoc, Sema::BFRK_Rebuild);
   }
 
+  /// Build a new C++ tuple-based for expansion statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  StmtResult RebuildCXXCompositeExpansionStmt(SourceLocation TemplateForLoc,
+                                              SourceLocation ConstexprLoc,
+                                              SourceLocation ColonLoc,
+                                              SourceLocation StructLoc,
+                                              Stmt *RangeVarDS, Stmt *LoopVarDS,
+                                              SourceLocation RParenLoc) {
+    // FIXME: Whether this builds a constexpr loop or not depends entirely
+    // on whether the loop variable is declared constexpr.
+    return getSema().ActOnCXXExpansionStmt(TemplateForLoc, ConstexprLoc,
+                                           LoopVarDS, ColonLoc, StructLoc,
+                                           RangeVarDS, RParenLoc,
+                                           Sema::BFRK_Rebuild,
+                                           ConstexprLoc.isValid());
+  }
+
+  StmtResult RebuildCXXPackExpansionStmt(SourceLocation TemplateForLoc,
+                                         SourceLocation ConstexprLoc,
+                                         SourceLocation ColonLoc,
+                                         Expr *RangeExpr, Stmt *LoopVarDS,
+                                         SourceLocation RParenLoc) {
+    return getSema().ActOnCXXExpansionStmt(TemplateForLoc, ConstexprLoc,
+                                           LoopVarDS, ColonLoc,
+                                           RangeExpr, RParenLoc,
+                                           Sema::BFRK_Rebuild,
+                                           ConstexprLoc.isValid());
+  }
+
   /// Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -2663,6 +2694,27 @@ public:
       ArrayRef<Sema::OMPIteratorData> Data) {
     return getSema().ActOnOMPIteratorExpr(/*Scope=*/nullptr, IteratorKwLoc,
                                           LLoc, RLoc, Data);
+  }
+
+  /// Build a new C++ selection expression
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXSelectMemberExpr(CXXRecordDecl *RD, VarDecl *Base,
+                                        Expr *Index, SourceLocation KW,
+                                        SourceLocation B) {
+    return getSema().ActOnCXXSelectMemberExpr(RD, Base, Index, KW, B,
+                                              SourceLocation());
+  }
+
+  /// Build a new select-pack-elem expression
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXSelectPackElemExpr(SourceLocation SelectLoc,
+                                              Expr *Range, Expr *Index) {
+    return getSema().ActOnCXXSelectPackElemExpr(SelectLoc, Range,
+                                                    Index);
   }
 
   /// Build a new call expression.
@@ -8386,6 +8438,98 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
 }
 
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXPackExpansionStmt(
+                                              CXXPackExpansionStmt *S) {
+  ExprResult RangeExpr;
+  RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
+  if (RangeExpr.isInvalid())
+    return StmtError();
+
+  // FIXME: Is this actually an evaluated expression.
+  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVar.isInvalid())
+    return StmtError();
+
+  StmtResult NewStmt = S;
+  if (getDerived().AlwaysRebuild() ||
+      LoopVar.get() != S->getLoopVarStmt()) {
+    NewStmt = getDerived().RebuildCXXPackExpansionStmt(
+      S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  StmtResult Body = getDerived().TransformStmt(S->getBody());
+
+  if (Body.isInvalid())
+    return StmtError();
+
+  // Body has changed but we didn't rebuild the for-range statement. Rebuild
+  // it now so we have a new statement to attach the body to.
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
+    NewStmt = getDerived().RebuildCXXPackExpansionStmt(
+      S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  if (NewStmt.get() == S)
+    return S;
+
+  CXXExpansionStmt *ES = cast<CXXExpansionStmt>(NewStmt.get());
+  return getSema().FinishCXXExpansionStmt(ES, Body.get());
+}
+
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::
+TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
+  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeStmt());
+  if (RangeVar.isInvalid())
+    return StmtError();
+
+  // FIXME: Is this actually an evaluated expression.
+  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVar.isInvalid())
+    return StmtError();
+
+  StmtResult NewStmt = S;
+  if (getDerived().AlwaysRebuild() ||
+      RangeVar.get() != S->getRangeStmt() ||
+      LoopVar.get() != S->getLoopVarStmt()) {
+    NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
+        S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+        S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  StmtResult Body = getDerived().TransformStmt(S->getBody());
+
+  if (Body.isInvalid())
+    return StmtError();
+
+  // Body has changed but we didn't rebuild the for-range statement. Rebuild
+  // it now so we have a new statement to attach the body to.
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
+    NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
+      S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+      S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  if (NewStmt.get() == S)
+    return S;
+
+  CXXExpansionStmt *ES = cast<CXXExpansionStmt>(NewStmt.get());
+  return getSema().FinishCXXExpansionStmt(ES, Body.get());
+}
+
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformMSDependentExistsStmt(
@@ -11043,6 +11187,69 @@ TreeTransform<Derived>::TransformOMPIteratorExpr(OMPIteratorExpr *E) {
     getDerived().transformedLocalDecl(E->getIteratorDecl(I),
                                       IE->getIteratorDecl(I));
   return Res;
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  ExprResult NewIndex =
+    getDerived().TransformExpr(E->getIndexExpr());
+  if (NewIndex.isInvalid())
+    return ExprError();
+
+  ExprResult NewBase =
+    getDerived().TransformExpr(E->getRangeExpr());
+  if (NewBase.isInvalid())
+    return ExprError();
+
+  Decl *NewBaseDecl =
+    cast<DeclRefExpr>(NewBase.get())->getDecl();
+  NewBaseDecl =
+    getDerived().TransformDecl(E->getRangeExpr()->getExprLoc(), NewBaseDecl);
+  if (!isa<VarDecl>(NewBaseDecl))
+    return ExprError();
+
+  CXXRecordDecl *NewRecord = E->getRecord();
+  if (!NewRecord)
+    NewRecord = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
+  if (!NewRecord)
+    return ExprError();
+
+  // Note we do not transform and pass the getSubstituteExpr; it's usually null
+  // here anyways, but if not, this might be a weird transformation and
+  // probably better to let that be recalculated from the other transformed
+  // variables during ActOn.  (If we were transforming the substitute, then
+  // we should have a Rebuild overload that takes ONLY the substitute and
+  // the locations, and doesn't transform anything else, since once it has
+  // the substitute it's done.)
+  return getDerived().RebuildCXXSelectMemberExpr(NewRecord,
+                                                 cast<VarDecl>(NewBaseDecl),
+                                                 NewIndex.get(),
+                                                 E->getSelectLoc(),
+                                                 E->getRangeLoc());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXSelectPackElemExpr(
+                                             CXXSelectPackElemExpr *E) {
+  ExprResult NewRangeExpr =
+    getDerived().TransformExpr(E->getRangeExpr());
+  if (NewRangeExpr.isInvalid())
+    return ExprError();
+
+  ExprResult NewIndexExpr =
+    getDerived().TransformExpr(E->getIndexExpr());
+  if (NewIndexExpr.isInvalid())
+    return ExprError();
+
+  // Note we do not transform and pass the getSubstituteExpr; it's usually null
+  // here anyways, but if not, this might be a weird transformation and
+  // probably better to let that be recalculated from the other transformed
+  // variables during ActOn.
+  return getDerived().RebuildCXXSelectPackElemExpr(E->getSelectLoc(),
+                                                   NewRangeExpr.get(),
+                                                   NewIndexExpr.get());
 }
 
 template<typename Derived>

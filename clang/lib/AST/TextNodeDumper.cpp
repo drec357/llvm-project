@@ -1774,6 +1774,8 @@ void TextNodeDumper::VisitVarDecl(const VarDecl *D) {
       OS << " listinit";
       break;
     }
+    if (D->getNonGlobalRefsInConstInitOkay())
+      OS << " refptr-init-ok";
   }
   if (D->needsDestruction(D->getASTContext()))
     OS << " destroyed";

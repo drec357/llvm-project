@@ -4338,3 +4338,52 @@ ExprResult Parser::ParseBuiltinBitCast() {
   return Actions.ActOnBuiltinBitCastExpr(KWLoc, DeclaratorInfo, Operand,
                                          T.getCloseLocation());
 }
+
+ExprResult
+Parser::ParseCXXSelectExpr() {
+  assert(Tok.is(tok::kw___select) && "Not __select!");
+  SourceLocation SelectLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+  llvm::SmallVector<Expr *, 2> Exprs;
+  llvm::SmallVector<SourceLocation, 1> CommaLocs;
+  ParseExpressionList(Exprs, CommaLocs, llvm::function_ref<void()>(nullptr));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  if (Exprs.size() != 2)
+    return ExprError();
+
+  Expr *Range = Exprs.front();
+  Expr *Index = Exprs.back();
+
+  // Check if the range is an unexpanded parameter pack, e.g. a
+  // FunctionParmPackExpr.
+  if (Range->containsUnexpandedParameterPack())
+    return Actions.ActOnCXXSelectPackElemExpr(SelectLoc, Range, Index);
+
+  // Otherwise, we expect to be the range to refer to a class object.
+  if (!isa<DeclRefExpr>(Range)) {
+    ExprResult TypoFix = Actions.CorrectDelayedTyposInExpr(Range).get();
+    if (!isa<DeclRefExpr>(TypoFix.get()))
+      return ExprError();
+    Range = TypoFix.get();
+  }
+  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Range);
+  Decl *FoundDecl = BaseDRE->getDecl();
+  if (!isa<VarDecl>(FoundDecl))
+    return ExprError();
+  VarDecl *BaseVar =
+    cast<VarDecl>(FoundDecl);
+  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
+  if (!Record && !BaseVar->getType()->isDependentType())
+    return ExprError();
+
+  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl),
+                                          Index, SelectLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
+}

@@ -207,6 +207,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
   case PriorTemplateArgumentSubstitution:
   case ConstraintsCheck:
   case NestedRequirementConstraintsCheck:
+  case ForLoopInstantiation:
     return true;
 
   case RequirementInstantiation:
@@ -428,6 +429,23 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     : InstantiatingTemplate(
           SemaRef, CodeSynthesisContext::ParameterMappingSubstitution,
           PointOfInstantiation, InstantiationRange, Template) {}
+
+// template-for instantiation.
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef,
+          CodeSynthesisContext::ForLoopInstantiation,
+          PointOfInstantiation, InstantiationRange, nullptr, nullptr,
+          TemplateArgs) {
+  if (!this->isInvalid()) {
+    // Set the loop on the active instantiation.
+    CodeSynthesisContext& Inst =
+      SemaRef.CodeSynthesisContexts.back();
+    Inst.Loop = S;
+  }
+}
 
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
   Ctx.SavedInNonInstantiationSFINAEContext = InNonInstantiationSFINAEContext;
@@ -716,6 +734,12 @@ void Sema::PrintInstantiationStack() {
         << Active->InstantiationRange;
       break;
 
+    case CodeSynthesisContext::ForLoopInstantiation:
+      // FIXME: Provide more context about the loop body error.
+      Diags.Report(Active->PointOfInstantiation,
+                   diag::note_loop_body_instantiation_here);
+      break;
+
     case CodeSynthesisContext::RequirementInstantiation:
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_template_requirement_instantiation_here)
@@ -849,6 +873,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       if (isa<TypeAliasTemplateDecl>(Active->Entity))
         break;
       LLVM_FALLTHROUGH;
+    case CodeSynthesisContext::ForLoopInstantiation:
     case CodeSynthesisContext::DefaultFunctionArgumentInstantiation:
     case CodeSynthesisContext::ExceptionSpecInstantiation:
     case CodeSynthesisContext::ConstraintsCheck:
@@ -3719,10 +3744,13 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
       isa<CXXDeductionGuideDecl>(D->getDeclContext()))
     return nullptr;
 
-  // If we didn't find the decl, then we either have a sema bug, or we have a
-  // forward reference to a label declaration.  Return null to indicate that
-  // we have an uninstantiated label.
-  assert(isa<LabelDecl>(D) && "declaration not instantiated in this scope");
+  // Handle forward references to a label declaration.
+  if (isa<LabelDecl>(D))
+    return nullptr;
+
+  // If we reach this point, and we're not allowing uninstantiated decls,
+  // then we have a sema bug.
+  assert(InstantiatingExpansionStmt && "declaration not instantiated in this scope");
   return nullptr;
 }
 

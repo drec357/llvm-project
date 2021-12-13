@@ -373,6 +373,40 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   PrintControlledStmt(Node->getBody());
 }
 
+void StmtPrinter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *Node) {
+  Indent() << "template for (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  if (Node->getStructLoc().isValid())
+    OS << "struct(";
+  PrintExpr(Node->getRangeInit());
+  if (Node->getStructLoc().isValid())
+    OS << ")";
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
+void StmtPrinter::VisitCXXPackExpansionStmt(
+                                      CXXPackExpansionStmt *Node) {
+  Indent() << "template for (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeExpr());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())
@@ -1432,6 +1466,22 @@ void StmtPrinter::VisitOMPIteratorExpr(OMPIteratorExpr *Node) {
     if (I < E - 1)
       OS << ", ";
   }
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  OS << "__select(";
+  PrintExpr(E->getRangeExpr());
+  OS << ", ";
+  PrintExpr(E->getIndexExpr());
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXSelectPackElemExpr(CXXSelectPackElemExpr *E) {
+  OS << "__select(";
+  PrintExpr(E->getRangeExpr());
+  OS << ", ";
+  PrintExpr(E->getIndexExpr());
   OS << ")";
 }
 

@@ -937,6 +937,26 @@ void ASTStmtWriter::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   Code = serialization::EXPR_OMP_ITERATOR;
 }
 
+void ASTStmtWriter::VisitCXXSelectExpr(CXXSelectExpr *E) {
+  VisitExpr(E);
+  Record.AddSourceLocation(E->getSelectLoc());
+  Record.AddStmt(E->getRangeExpr());
+  Record.AddStmt(E->getIndexExpr());
+  Record.AddStmt(E->getSubstituteExpr());
+}
+
+void ASTStmtWriter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitCXXSelectExpr(E);
+  Record.AddDeclRef(E->getRecord());
+  Record.AddSourceLocation(E->getRecordLoc());
+  Record.push_back(E->getNumFields());
+}
+
+void ASTStmtWriter::VisitCXXSelectPackElemExpr(
+                                               CXXSelectPackElemExpr *E) {
+  VisitCXXSelectExpr(E);
+}
+
 void ASTStmtWriter::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   Record.push_back(E->getNumArgs());
@@ -1633,6 +1653,34 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Record.AddStmt(S->getLoopVarStmt());
   Record.AddStmt(S->getBody());
   Code = serialization::STMT_CXX_FOR_RANGE;
+}
+
+void ASTStmtWriter::VisitCXXExpansionStmt(CXXExpansionStmt *S) {
+  VisitStmt(S);
+  Record.AddSourceLocation(S->getTemplateForLoc());
+  Record.AddSourceLocation(S->getConstexprLoc());
+  Record.AddSourceLocation(S->getColonLoc());
+  Record.AddSourceLocation(S->getStructLoc());
+  Record.AddSourceLocation(S->getRParenLoc());
+  Record.AddTemplateParameterList(S->getInductionVarTPL());
+  Record.AddStmt(S->getLoopVarStmt());
+  Record.AddStmt(S->getBody());
+}
+
+void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
+  Record.AddStmt(S->getRangeStmt());
+  Record.AddStmt(S->getBeginStmt());
+  Record.AddStmt(S->getEndStmt());
+  Code = serialization::STMT_CXX_PACK_EXPANSION;
+}
+
+void ASTStmtWriter::VisitCXXPackExpansionStmt(
+                                             CXXPackExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
+  Record.AddStmt(S->getRangeStmt());
+  Code = serialization::STMT_CXX_COMP_EXPANSION;
 }
 
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
