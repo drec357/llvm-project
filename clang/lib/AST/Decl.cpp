@@ -2914,6 +2914,9 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.IsMultiVersion = false;
   FunctionDeclBits.IsCopyDeductionCandidate = false;
   FunctionDeclBits.HasODRHash = false;
+  FunctionDeclBits.IsMetaprogram = false;
+  FunctionDeclBits.HasDependentCodeInjectingMetaprograms = false;
+  FunctionDeclBits.IsCodeInjectingMetafunction = false;
   if (TrailingRequiresClause)
     setTrailingRequiresClause(TrailingRequiresClause);
 }

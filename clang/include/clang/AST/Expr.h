@@ -597,8 +597,13 @@ public:
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
+    /// This will be nonnull and nonempty after evaluating a \c MetaprogramDecl that
+    /// contains \c StringInjectionStmt s.
+    SmallVectorImpl<const StringLiteral *> *StringInjectionChunks;
+
     EvalStatus()
-        : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr) {}
+        : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr),
+          StringInjectionChunks(nullptr) {}
 
     // hasSideEffects - Return true if the evaluated expression has
     // side effects.
@@ -658,6 +663,9 @@ public:
   bool EvaluateAsFixedPoint(EvalResult &Result, const ASTContext &Ctx,
                             SideEffectsKind AllowSideEffects = SE_NoSideEffects,
                             bool InConstantContext = false) const;
+
+  /// EvaluateAsVoid - Return true if completely folded.
+  bool EvaluateAsVoid(EvalResult &Result, const ASTContext &Ctx) const;
 
   /// isEvaluatable - Call EvaluateAsRValue to see if this expression can be
   /// constant folded without side-effects, but discard the result.

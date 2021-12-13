@@ -161,3 +161,18 @@ void Preprocessor::ReplacePreviousCachedToken(ArrayRef<Token> NewToks) {
   CachedTokens.erase(CachedTokens.begin() + CachedLexPos - 1 + NewToks.size());
   CachedLexPos += NewToks.size() - 1;
 }
+
+// Called before creating a PreprocessorBrickWallRAII.
+// If there are any cached properties in the Preprocessor which do not need
+// to be saved and restored while we temporarily parse in a different context,
+// clear them here, for better efficiency.
+void Preprocessor::CleanUpCache() {
+  if (!isBacktrackEnabled() && CachedLexPos == CachedTokens.size()) {
+    // FIXME: so far this if condition ALWAYS seems to be true when
+    // entering a metaprogram decl or instantiation, so perhaps the "if" can
+    // be removed.
+    CachedTokens.clear();
+    CachedLexPos = 0;
+    assert(BacktrackPositions.empty());
+  }
+}

@@ -175,6 +175,18 @@ void Lexer::resetExtendedTokenMode() {
     SetCommentRetentionState(PP->getCommentRetentionState());
 }
 
+/// Create a new lexer object for lexing injected strings.
+Lexer::Lexer(SourceLocation fileloc, const LangOptions &langOpts,
+             const char *BufStart, const char *BufPtr, const char *BufEnd,
+             Preprocessor &PP)
+        : PreprocessorLexer(&PP, FileID()),
+          FileLoc(fileloc),
+          LangOpts(langOpts),
+          BufferIsInjectedStr(true) {
+  InitLexer(BufStart, BufPtr, BufEnd);
+}
+
+
 /// Create_PragmaLexer: Lexer constructor - Create a new lexer object for
 /// _Pragma expansion.  This has a variety of magic semantics that this method
 /// sets up.  It returns a new'd Lexer that must be delete'd when done.
@@ -1153,8 +1165,12 @@ SourceLocation Lexer::getSourceLocation(const char *Loc,
   // In the normal case, we're just lexing from a simple file buffer, return
   // the file id from FileLoc with the offset specified.
   unsigned CharNo = Loc-BufferStart;
-  if (FileLoc.isFileID())
+
+  if (FileLoc.isFileID()) {
+    if (BufferIsInjectedStr)
+      ++CharNo; // Skip over the initial " of the injected string literal
     return FileLoc.getLocWithOffset(CharNo);
+  }
 
   // Otherwise, this is the _Pragma lexer case, which pretends that all of the
   // tokens are lexed from where the _Pragma was defined.
@@ -2903,7 +2919,10 @@ bool Lexer::LexEndOfFile(Token &Result, const char *CurPtr) {
   SourceLocation EndLoc = getSourceLocation(BufferEnd);
   // C99 5.1.1.2p2: If the file is non-empty and didn't end in a newline, issue
   // a pedwarn.
-  if (CurPtr != BufferStart && (CurPtr[-1] != '\n' && CurPtr[-1] != '\r')) {
+  if (CurPtr != BufferStart && (CurPtr[-1] != '\n' && CurPtr[-1] != '\r')
+      //...except if this is an injected source string, in which case this
+      //   isn't really a file.
+      && !BufferIsInjectedStr) {
     DiagnosticsEngine &Diags = PP->getDiagnostics();
     unsigned DiagID;
 

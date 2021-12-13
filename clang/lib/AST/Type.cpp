@@ -2503,6 +2503,27 @@ bool QualType::isTriviallyCopyableType(const ASTContext &Context) const {
   return false;
 }
 
+static bool isConstCharPtr(QualType Ty) {
+  if (const PointerType *Ptr = dyn_cast<PointerType>(Ty))
+    Ty = Ptr->getPointeeType();
+  return Ty.isConstQualified() && Ty->isCharType();
+}
+
+static bool isCharArray(QualType Ty) {
+  if (Ty->isConstantArrayType())
+    Ty = cast<ArrayType>(Ty.getTypePtr())->getElementType();
+  return Ty->isCharType();
+}
+
+bool QualType::isCXXStringLiteralType() const {
+  QualType CanonTy = getCanonicalType();
+  if (isConstCharPtr(CanonTy))
+    return true;
+  if (isCharArray(CanonTy))
+    return true;
+  return false;
+}
+
 bool QualType::isNonWeakInMRRWithObjCWeak(const ASTContext &Context) const {
   return !Context.getLangOpts().ObjCAutoRefCount &&
          Context.getLangOpts().ObjCWeak &&

@@ -1748,6 +1748,14 @@ Parser::ParseDeclaration(DeclaratorContext Context, SourceLocation &DeclEnd,
     ProhibitAttributes(attrs);
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
+  case tok::kw_consteval:
+    // Metaprogram in function context
+    if (getLangOpts().StringInjection && NextToken().is(tok::l_brace)) {
+      auto MetaCtx = MetaprogramContext();
+      assert(MetaCtx.isFunctionContext());
+      return ParseMetaprogram(MetaCtx, /*Nested=*/ParsingFromInjectedStr());
+    }
+    LLVM_FALLTHROUGH; //call ParseSimpleDeclaration if not a metaprogram
   default:
     return ParseSimpleDeclaration(Context, DeclEnd, attrs, true, nullptr,
                                   DeclSpecStart);
@@ -6281,6 +6289,14 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     }
     D.SetIdentifier(nullptr, Tok.getLocation());
     D.setInvalidType(true);
+  }
+
+  // FIXME; this is hack to avoid the assert below fail when parsing (in
+  //  a metaprogram) injected strings containing certain unbalanced delimiters
+  if (!D.isPastIdentifier() && PP.ErrorWhileParsingFromInjectedStr()) {
+    D.SetIdentifier(nullptr, Tok.getLocation());
+    D.setInvalidType(true);
+    return;
   }
 
  PastIdentifier:

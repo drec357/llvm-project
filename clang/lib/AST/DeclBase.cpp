@@ -858,6 +858,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Empty:
     case LifetimeExtendedTemporary:
     case RequiresExprBody:
+    case Metaprogram:
       // Never looked up by name.
       return 0;
   }
@@ -1559,17 +1560,21 @@ void DeclContext::addHiddenDecl(Decl *D) {
 void DeclContext::addDecl(Decl *D) {
   addHiddenDecl(D);
 
-  if (auto *ND = dyn_cast<NamedDecl>(D))
-    ND->getDeclContext()->getPrimaryContext()->
-        makeDeclVisibleInContextWithFlags(ND, false, true);
+  if (auto *ND = dyn_cast<NamedDecl>(D)) {
+    ND->getDeclContext()
+        ->getPrimaryContext()
+        ->makeDeclVisibleInContextWithFlags(ND, false, true);
+  }
 }
 
 void DeclContext::addDeclInternal(Decl *D) {
   addHiddenDecl(D);
 
-  if (auto *ND = dyn_cast<NamedDecl>(D))
-    ND->getDeclContext()->getPrimaryContext()->
-        makeDeclVisibleInContextWithFlags(ND, true, true);
+  if (auto *ND = dyn_cast<NamedDecl>(D)) {
+    ND->getDeclContext()
+        ->getPrimaryContext()
+        ->makeDeclVisibleInContextWithFlags(ND, true, true);
+  }
 }
 
 /// buildLookup - Build the lookup data structure with all of the

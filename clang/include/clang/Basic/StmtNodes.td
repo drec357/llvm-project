@@ -177,6 +177,9 @@ def NaryMetaobjectOpExpr : StmtNode<Expr>;
 def ConceptSpecializationExpr : StmtNode<Expr>;
 def RequiresExpr : StmtNode<Expr>;
 
+// [StringInjection]
+def StringInjectionStmt : StmtNode<Stmt>;
+
 // Obj-C Expressions.
 def ObjCStringLiteral : StmtNode<Expr>;
 def ObjCBoxedExpr : StmtNode<Expr>;

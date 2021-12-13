@@ -395,6 +395,18 @@ void ASTStmtWriter::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
   Code = serialization::EXPR_DEPENDENT_COAWAIT;
 }
 
+void ASTStmtWriter::VisitStringInjectionStmt(StringInjectionStmt *S) {
+  VisitStmt(S);
+  Record.AddStmt(S->getWrittenFirstArg());
+  Record.push_back(S->getNumArgs());
+  Record.AddSourceLocation(S->getKeywordLoc());
+  Record.AddSourceLocation(S->getLParenLoc());
+  Record.AddSourceLocation(S->getRParenLoc());
+  for (auto Arg = S->arg_begin(), ArgEnd = S->arg_end();
+       Arg != ArgEnd; ++Arg)
+    Record.AddStmt(*Arg);
+}
+
 static void
 addConstraintSatisfaction(ASTRecordWriter &Record,
                           const ASTConstraintSatisfaction &Satisfaction) {

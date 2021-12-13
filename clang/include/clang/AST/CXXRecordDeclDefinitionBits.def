@@ -246,4 +246,10 @@ FIELD(HasDeclaredCopyAssignmentWithConstParam, 1, MERGE_OR)
 /// base classes or fields have a no-return destructor
 FIELD(IsAnyDestructorNoReturn, 1, NO_MERGE)
 
+/// True if this is the templated decl of a ClassTemplateDecl,
+/// or a ClassTemplatePartialSpecializationDecl and contains
+/// at least one dependent metaprogram with at least one code
+/// injection statement.
+FIELD(HasDependentCodeInjectingMetaprograms, 1, NO_MERGE)
+
 #undef FIELD

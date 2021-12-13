@@ -2673,6 +2673,54 @@ public:
     setInstantiationOfMemberFunction(getASTContext(), FD, TSK);
   }
 
+  /// Whether this function is the underlying implementation
+  /// of a metaprogram (consteval {...})
+  bool isMetaprogram() const {
+    return getCanonicalDecl()->FunctionDeclBits.IsMetaprogram;
+  }
+
+  /// Specify that this function is the underlying implementation
+  /// of a metaprogram (`consteval {...}`)
+  void setIsMetaprogram(bool V = true) {
+    FunctionDeclBits.IsMetaprogram = V;
+  }
+
+  /// Whether this function is an instantiatable pattern and contains
+  /// at least one dependent metaprogram with at least one
+  /// code injection statement
+  /// \code
+  ///   template<typename T> void f() { consteval { } }
+  ///   template<typename T> consteval void g() { __inj(...) }
+  ///   template<typename T> void h() { consteval { f<T>() } }
+  ///   template<typename T> class Foo { i() { consteval { f<T>(); } } };
+  /// \endcode
+  /// f<T>(): false
+  /// g<T>(): false
+  /// h<T>(): true
+  /// Foo<T>::i(): true
+  bool hasDependentCodeInjectingMetaprograms() const {
+    return FunctionDeclBits.HasDependentCodeInjectingMetaprograms;
+  }
+  /// Specify that this function is an instantiatable pattern and
+  /// contains a MetaprogramDecl .
+  void setHasDependentCodeInjectingMetaprograms(bool V = true) {
+    FunctionDeclBits.HasDependentCodeInjectingMetaprograms = V;
+  }
+
+  /// Whether this function is a consteval function which
+  /// contains at least one code injection statement or
+  /// call to a function containing one.
+  bool isCodeInjectingMetafunction() const {
+    return getCanonicalDecl()->FunctionDeclBits.IsCodeInjectingMetafunction;
+  }
+
+  /// Specify that this function is a consteval function which
+  /// contains at least one code injection statement or
+  /// call to a function containing one.
+  void setIsCodeInjectingMetafunction(bool V = true) {
+    FunctionDeclBits.IsCodeInjectingMetafunction = V;
+  }
+
   /// Retrieves the function template that is described by this
   /// function declaration.
   ///

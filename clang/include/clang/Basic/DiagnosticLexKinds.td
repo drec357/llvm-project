@@ -274,6 +274,12 @@ def err_lexing_char : Error<"failure when lexing a character literal">;
 def err_lexing_numeric : Error<"failure when lexing a numeric literal">;
 def err_placeholder_in_source : Error<"editor placeholder in source file">;
 
+// [StringInjection]
+def err_unterminated_string_injection : Error<
+  "unterminated string injection">;
+def err_metaparse_unsupported_use : Error<
+  "unsupported metaparse use: %0">;
+
 //===----------------------------------------------------------------------===//
 // Preprocessor Diagnostics
 //===----------------------------------------------------------------------===//

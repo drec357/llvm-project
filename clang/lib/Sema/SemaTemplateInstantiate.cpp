@@ -21,9 +21,12 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/Stack.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Parse/RAIIObjectsForParser.h"
+#include "clang/Sema/CXXFieldCollector.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaConcept.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
@@ -2711,74 +2714,161 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   Instantiator.enableLateAttributeInstantiation(&LateAttrs);
 
   bool MightHaveConstexprVirtualFunctions = false;
-  for (auto *Member : Pattern->decls()) {
-    // Don't instantiate members not belonging in this semantic context.
-    // e.g. for:
-    // @code
-    //    template <int i> class A {
-    //      class B *g;
-    //    };
-    // @endcode
-    // 'class B' has the template as lexical context but semantically it is
-    // introduced in namespace scope.
-    if (Member->getDeclContext() != Pattern)
-      continue;
 
-    // BlockDecls can appear in a default-member-initializer. They must be the
-    // child of a BlockExpr, so we only know how to instantiate them from there.
-    // Similarly, lambda closure types are recreated when instantiating the
-    // corresponding LambdaExpr.
-    if (isa<BlockDecl>(Member) ||
-        (isa<CXXRecordDecl>(Member) && cast<CXXRecordDecl>(Member)->isLambda()))
-      continue;
+  auto AddMembersToInstantiation = [&, Pattern, TSK, PointOfInstantiation]() {
+    FieldCollector->StartClass();
+    for (auto *Member : Pattern->decls()) {
+      // Don't instantiate members not belonging in this semantic context.
+      // e.g. for:
+      // @code
+      //    template <int i> class A {
+      //      class B *g;
+      //    };
+      // @endcode
+      // 'class B' has the template as lexical context but semantically it is
+      // introduced in namespace scope.
+      if (Member->getDeclContext() != Pattern)
+        continue;
 
-    if (Member->isInvalidDecl()) {
-      Instantiation->setInvalidDecl();
-      continue;
-    }
+      // BlockDecls can appear in a default-member-initializer. They must be the
+      // child of a BlockExpr, so we only know how to instantiate them from there. Similarly, lambda closure types are recreated when instantiating the corresponding LambdaExpr.
+      if (isa<BlockDecl>(Member) || (isa<CXXRecordDecl>(Member) &&
+                                     cast<CXXRecordDecl>(Member)->isLambda()))
+        continue;
 
-    Decl *NewMember = Instantiator.Visit(Member);
-    if (NewMember) {
-      if (FieldDecl *Field = dyn_cast<FieldDecl>(NewMember)) {
-        Fields.push_back(Field);
-      } else if (EnumDecl *Enum = dyn_cast<EnumDecl>(NewMember)) {
-        // C++11 [temp.inst]p1: The implicit instantiation of a class template
-        // specialization causes the implicit instantiation of the definitions
-        // of unscoped member enumerations.
-        // Record a point of instantiation for this implicit instantiation.
-        if (TSK == TSK_ImplicitInstantiation && !Enum->isScoped() &&
-            Enum->isCompleteDefinition()) {
-          MemberSpecializationInfo *MSInfo =Enum->getMemberSpecializationInfo();
-          assert(MSInfo && "no spec info for member enum specialization");
-          MSInfo->setTemplateSpecializationKind(TSK_ImplicitInstantiation);
-          MSInfo->setPointOfInstantiation(PointOfInstantiation);
-        }
-      } else if (StaticAssertDecl *SA = dyn_cast<StaticAssertDecl>(NewMember)) {
-        if (SA->isFailed()) {
-          // A static_assert failed. Bail out; instantiating this
-          // class is probably not meaningful.
-          Instantiation->setInvalidDecl();
-          break;
-        }
-      } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(NewMember)) {
-        if (MD->isConstexpr() && !MD->getFriendObjectKind() &&
-            (MD->isVirtualAsWritten() || Instantiation->getNumBases()))
-          MightHaveConstexprVirtualFunctions = true;
+      if (Member->isInvalidDecl()) {
+        Instantiation->setInvalidDecl();
+        continue;
       }
 
-      if (NewMember->isInvalidDecl())
-        Instantiation->setInvalidDecl();
-    } else {
-      // FIXME: Eventually, a NULL return will mean that one of the
-      // instantiations was a semantic disaster, and we'll want to mark the
-      // declaration invalid.
-      // For now, we expect to skip some members that we can't yet handle.
+      Decl *NewMember = Instantiator.Visit(Member);
+      if (NewMember) {
+        if (FieldDecl *Field = dyn_cast<FieldDecl>(NewMember)) {
+          Fields.push_back(Field);
+        } else if (EnumDecl *Enum = dyn_cast<EnumDecl>(NewMember)) {
+          // C++11 [temp.inst]p1: The implicit instantiation of a class template
+          // specialization causes the implicit instantiation of the definitions
+          // of unscoped member enumerations.
+          // Record a point of instantiation for this implicit instantiation.
+          if (TSK == TSK_ImplicitInstantiation && !Enum->isScoped() &&
+              Enum->isCompleteDefinition()) {
+            MemberSpecializationInfo *MSInfo =
+                Enum->getMemberSpecializationInfo();
+            assert(MSInfo && "no spec info for member enum specialization");
+            MSInfo->setTemplateSpecializationKind(TSK_ImplicitInstantiation);
+            MSInfo->setPointOfInstantiation(PointOfInstantiation);
+          }
+        } else if (StaticAssertDecl *SA =
+                       dyn_cast<StaticAssertDecl>(NewMember)) {
+          if (SA->isFailed()) {
+            // A static_assert failed. Bail out; instantiating this
+            // class is probably not meaningful.
+            Instantiation->setInvalidDecl();
+            break;
+          }
+        } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(NewMember)) {
+          if (MD->isConstexpr() && !MD->getFriendObjectKind() &&
+              (MD->isVirtualAsWritten() || Instantiation->getNumBases()))
+            MightHaveConstexprVirtualFunctions = true;
+        }
+
+        if (NewMember->isInvalidDecl())
+          Instantiation->setInvalidDecl();
+      } else {
+        // FIXME: Eventually, a NULL return will mean that one of the
+        // instantiations was a semantic disaster, and we'll want to mark the
+        // declaration invalid.
+        // For now, we expect to skip some members that we can't yet handle.
+      }
     }
+
+    // Finish checking fields.
+    ActOnFields(nullptr, Instantiation->getLocation(), Instantiation,
+                llvm::makeArrayRef(
+                    // strict aliasing violation!
+                    reinterpret_cast<Decl**>(FieldCollector->getCurFields()),
+                    FieldCollector->getCurNumFields()),
+                SourceLocation(), SourceLocation(), ParsedAttributesView());
+
+    FieldCollector->FinishClass();
+  };
+
+  // Regardless of whether the Pattern->hasDependentCodeInjectingMetaprograms(),
+  // and whether that metaprogram contains __inj statements,
+  // we will set the PII (the ParsingIntoInstantiation state)
+  // and restore it upon exiting. (If IsPatternWithMetapgoram,
+  // we'll set it to PII_class; if not, PII_false.)
+  SemaPIIRAII SavedPIIState(*this);
+
+  if (Pattern->hasDependentCodeInjectingMetaprograms()) {
+    // Pass along the AccessAttrs; this is intended to hold attributes
+    // collected while parsing injected strings.
+    // FIXME I'm not sure if this is really needed, or if we are making
+    // use of it properly.
+    ParsedAttributesWithRange AccessAttrs(TheParser->getAttrFactory());
+    Instantiator.setAccessAttrs(AccessAttrs);
+
+    assert(CurContext == Instantiation); //sanity
+
+    // Save the parser state & CurScope and enter a state in
+    // which any parsing adds members to the Instantiation
+    // (When we exit this block and the RAII is destroyed the
+    // original parser state/scope will be automatically restored):
+    TempParseIntoClassInstantiation TemporarilyParseIntoInstantiation(
+          *this, Pattern->getTagKind() == TTK_Interface);
+    assert(PII = PII_class);
+
+    // Just to be sure:
+    assert(TemporarilyParseIntoInstantiation.
+               PPTotalLexers_Equals_TotalLexersAtRAIIConstruction());
+
+#ifndef NDEBUG
+    auto DEBUGClassStackSize = TheParser->ClassStack.size();
+#endif
+
+    AddMembersToInstantiation();
+
+    bool Valid = true;
+    if (Instantiation->isInvalidDecl()) {
+      TemporarilyParseIntoInstantiation.setInvalid();
+      Valid = false;
+    }
+
+    // Be sure you lexed all the injected string lexers you added to the lexer
+    // stack, and no further:
+    assert(TemporarilyParseIntoInstantiation
+              .PPTotalLexers_Equals_TotalLexersAtRAIIConstruction()
+           || !Valid &&
+           "Expected PP.getTotalNumLexers() == "
+           "PP.TotalLexersAtRAIIConstruction after finishing initial "
+           "parsing of metaprograms -- are there perhaps some dead "
+           "lexers left over?");
+
+    assert(CurContext == Instantiation
+           && "CurContext was changed somewhere before late parsing began!");
+
+    assert(TheParser->ClassStack.size() == DEBUGClassStackSize
+           && "Class stack size was changed while adding members to "
+              "instantiation!");
+
+    TheParser->HandleLateParsing();
+
+    assert(CurContext == Instantiation
+           && "CurContext was changed during late parsing!");
+
+  } else {
+    // This template does not require any additional parsing; i.e. it is
+    // a normal template without any __inj(...) statements.
+    // Temporarily set PII to PII_false, in case this "normal" template
+    // instantiation is occuring while parsing into an outer instantiation, s.t.
+    // it is not already PII_false.
+    PII = PII_false;
+
+    AddMembersToInstantiation();
   }
 
-  // Finish checking fields.
-  ActOnFields(nullptr, Instantiation->getLocation(), Instantiation, Fields,
-              SourceLocation(), SourceLocation(), ParsedAttributesView());
+  SavedPIIState.Exit(); //return PII to its original value.
+
   CheckCompletedCXXClass(nullptr, Instantiation);
 
   // Default arguments are parsed, if not instantiated. We can go instantiate
@@ -3240,9 +3330,13 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
 
         if (Function->hasAttr<ExcludeFromExplicitInstantiationAttr>())
           continue;
-
         MemberSpecializationInfo *MSInfo =
             Function->getMemberSpecializationInfo();
+
+        // Members instantiated from injected strings will have no MSInfo.
+        if (LangOpts.StringInjection && !MSInfo)
+          continue;
+
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
                                                  == TSK_ExplicitSpecialization)
@@ -3287,6 +3381,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
           continue;
 
         MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
+
+        // Members instantiated from injected strings will have no MSInfo.
+        if (LangOpts.StringInjection && !MSInfo)
+          continue;
+
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
                                                  == TSK_ExplicitSpecialization)
@@ -3330,6 +3429,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
         continue;
 
       MemberSpecializationInfo *MSInfo = Record->getMemberSpecializationInfo();
+
+      // Members instantiated from injected strings will have no MSInfo.
+      if (LangOpts.StringInjection && !MSInfo)
+        continue;
+
       assert(MSInfo && "No member specialization information?");
 
       if (MSInfo->getTemplateSpecializationKind()
@@ -3392,6 +3496,11 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
                                 TSK);
     } else if (auto *Enum = dyn_cast<EnumDecl>(D)) {
       MemberSpecializationInfo *MSInfo = Enum->getMemberSpecializationInfo();
+
+      // Members instantiated from injected strings will have no MSInfo.
+      if (LangOpts.StringInjection && !MSInfo)
+        continue;
+
       assert(MSInfo && "No member specialization information?");
 
       if (MSInfo->getTemplateSpecializationKind()
@@ -3617,6 +3726,15 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
   return nullptr;
 }
 
+static void CopyToSemaScopeEtc(Decl *Inst, Sema &SemaRef) {
+  if (auto InstND = dyn_cast<NamedDecl>(Inst)) {
+    if (InstND->getDeclName()) {
+      SemaRef.PushOnScopeChains(InstND, SemaRef.getCurScope(),
+                                false/*don't add to CurContext*/);
+    }
+  }
+}
+
 void LocalInstantiationScope::InstantiatedLocal(const Decl *D, Decl *Inst) {
   D = getCanonicalParmVarDecl(D);
   llvm::PointerUnion<Decl *, DeclArgumentPack *> &Stored = LocalDecls[D];
@@ -3636,6 +3754,8 @@ void LocalInstantiationScope::InstantiatedLocal(const Decl *D, Decl *Inst) {
   } else {
     assert(Stored.get<Decl *>() == Inst && "Already instantiated this local");
   }
+  if (ShouldCopyToSemaScopeEtc)
+    CopyToSemaScopeEtc(Inst, SemaRef);
 }
 
 void LocalInstantiationScope::InstantiatedLocalPackArg(const Decl *D,
@@ -3643,6 +3763,8 @@ void LocalInstantiationScope::InstantiatedLocalPackArg(const Decl *D,
   D = getCanonicalParmVarDecl(D);
   DeclArgumentPack *Pack = LocalDecls[D].get<DeclArgumentPack *>();
   Pack->push_back(Inst);
+  if (ShouldCopyToSemaScopeEtc)
+    CopyToSemaScopeEtc(Inst, SemaRef);
 }
 
 void LocalInstantiationScope::MakeInstantiatedLocalArgPack(const Decl *D) {

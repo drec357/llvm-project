@@ -338,6 +338,31 @@ void Preprocessor::ResolvePragmaIncludeInstead(
   }
 }
 
+void Preprocessor::PushIncludeMacroStack() {
+  assert(CurLexerKind != CLK_CachingLexer && "cannot push a caching lexer");
+  IncludeMacroStack.emplace_back(CurLexerKind, CurLexerSubmodule,
+                                 std::move(CurLexer), CurPPLexer,
+                                 std::move(CurTokenLexer), CurDirLookup);
+  CurPPLexer = nullptr;
+}
+
+void Preprocessor::PopIncludeMacroStack() {
+  CurLexer = std::move(IncludeMacroStack.back().TheLexer);
+  CurPPLexer = IncludeMacroStack.back().ThePPLexer;
+  CurTokenLexer = std::move(IncludeMacroStack.back().TheTokenLexer);
+  CurDirLookup  = IncludeMacroStack.back().TheDirLookup;
+  CurLexerSubmodule = IncludeMacroStack.back().TheSubmodule;
+  CurLexerKind = IncludeMacroStack.back().CurLexerKind;
+  IncludeMacroStack.pop_back();
+  // [StringInjection]
+  assert((getTotalNumLexers() >= TotalNumLexersAtRAIIConstruction)
+         || ErrorWhileParsingFromInjectedStr() //unterminated metaparse expr
+         && "Either the last PreprocessorBrickWallRAII object wasn't destroyed "
+            "when it should have been or you have loaded a lexer from "
+            "the previous state, such that  you're about to lex/parse"
+            "at a totally different and unexpected/invalid location!");
+}
+
 /// HandleEndOfFile - This callback is invoked when the lexer hits the end of
 /// the current file.  This either returns the EOF token or pops a level off
 /// the include stack and keeps going.
@@ -345,6 +370,56 @@ bool Preprocessor::HandleEndOfFile(Token &Result, SourceLocation EndLoc,
                                    bool isEndOfMacro) {
   assert(!CurTokenLexer &&
          "Ending a file when currently in a macro!");
+
+  if (ParsingFromInjectedStr()) {
+    if (NoMoreInjectedStrsAvailable()) {
+      // This seems to indicates an ill-formed __metaparse_expr that is
+      // trying to parse beyond what has been provided.
+      Diag(CurInjectedStrLoc, diag::err_unterminated_string_injection);
+      ErrorWhileParsingFromInjectedStrBool = true;
+      // We will temporarily redirect lexing to a "terminator" lexer,
+      // which cycles through terminators until the metaparse requests
+      // are sated; at that point normal lexing will return.
+      // Instead of pushing the macro stack, we're just going to set the
+      // lexer kind differently, the recompute it when we need to:
+      CurLexerKind = CLK_TerminatorPretendLexer;
+      Lex(Result);
+      return true;
+    }
+
+    // Normal injected string parsing:
+    assert(!CurPPLexer || CurLexerKind == CLK_InjectedStrLexer
+           && "It seems CurLexerKind was not set/pushed/popped "
+              "properly for this InjectedStrLexer");
+    // Delete or cache the now-dead meta-source string lexer
+    // (copied this from TokenLexerCache handling in
+    // HandleEndOfTokenLexer)
+    if (NumCachedInjectedStrLexers == InjectedStrLexerCacheSize) {
+      CurLexer.reset();
+    } else if (CurLexer) {
+        // ^ Hack-ish: with nested __inj calls, CurLexer
+        // has sometimes already been nullified when getting here,
+        // hence the `if (CurLexer)` test.
+      InjectedStrLexerCache[NumCachedInjectedStrLexers++] = std::move(CurLexer);
+    }
+    if (IncludeMacroStack.size()) {
+      PopIncludeMacroStack();
+    } else {
+      CurPPLexer = nullptr;
+      CurTokenLexer.reset();
+    }
+    assert(getTotalNumLexers() >= TotalNumLexersAtRAIIConstruction
+           || ErrorWhileParsingFromInjectedStrBool
+           // ^ specifically, an unterminated metaparse
+           // will eat until it is sated, no stopping it.
+           && "You must have called PopIncludeMacroStack somewhere "
+              "else but here, or PopIncludeMacroStack is popping more "
+              "than one or something");
+    if (getTotalNumLexers() == TotalNumLexersAtRAIIConstruction) {
+      setNoMoreInjectedStrsAvailable(true);
+    }
+    return true;
+  } //if ParsingFromInjectedStr()
 
   // If we have an unclosed module region from a pragma at the end of a
   // module, complain and close it now.
@@ -618,6 +693,15 @@ void Preprocessor::RemoveTopOfLexerStack() {
       CurTokenLexer.reset();
     else
       TokenLexerCache[NumCachedTokenLexers++] = std::move(CurTokenLexer);
+  }
+
+  if (CurLexerKind==CLK_InjectedStrLexer) {
+    // Delete or cache the now-dead injected string lexer.
+    if (NumCachedInjectedStrLexers == InjectedStrLexerCacheSize) {
+      CurLexer.reset();
+    } else if (CurLexer) { //see note in HandleEndOfFile
+      InjectedStrLexerCache[NumCachedInjectedStrLexers++] = std::move(CurLexer);
+    }
   }
 
   PopIncludeMacroStack();

@@ -130,6 +130,7 @@ enum MacroUse {
 class Preprocessor {
   friend class VAOptDefinitionContext;
   friend class VariadicMacroScopeGuard;
+  friend class ParserBrickWallRAII;
 
   llvm::unique_function<void(const clang::Token &)> OnToken;
   std::shared_ptr<PreprocessorOptions> PPOpts;
@@ -527,12 +528,20 @@ private:
     CLK_Lexer,
     CLK_TokenLexer,
     CLK_CachingLexer,
-    CLK_LexAfterModuleImport
+    CLK_LexAfterModuleImport,
+    CLK_InjectedStrLexer,
+    CLK_TerminatorPretendLexer
   } CurLexerKind = CLK_Lexer;
 
   /// If the current lexer is for a submodule that is being built, this
   /// is that submodule.
   Module *CurLexerSubmodule = nullptr;
+
+  /// If the current lexer is a CLK_TerminatorPretendLexer, artifically lexing
+  /// different terminator characters (')', '}', etc.) to recover from an error
+  /// encountered during string injection, this specifies which particular
+  /// terminator should be lexed next.
+  unsigned CurTerminator = 0;
 
   /// Keeps track of the stack of files currently
   /// \#included, and macros currently being expanded from, not counting
@@ -873,6 +882,16 @@ private:
   std::unique_ptr<TokenLexer> TokenLexerCache[TokenLexerCacheSize];
   /// \}
 
+  /// \{
+  /// Cache of injected string lexers to reduce malloc traffic.
+  /// Very big cache relative to TokenLexerCacheSize, because we often need
+  /// to push a big stack of these in any MetaprogramDecl call that
+  /// contains StringInjectionStmts.
+  enum { InjectedStrLexerCacheSize = 64 };
+  unsigned NumCachedInjectedStrLexers;
+  std::unique_ptr<Lexer> InjectedStrLexerCache[InjectedStrLexerCacheSize];
+  /// \}
+
   /// Keeps macro expanded tokens for TokenLexers.
   //
   /// Works like a stack; a TokenLexer adds the macro expanded tokens that is
@@ -917,6 +936,26 @@ private:
   /// MacroInfos are managed as a chain for easy disposal.  This is the head
   /// of that list.
   MacroInfoChain *MIChainHead = nullptr;
+
+  /// True if Lex.ParsingFromInjectedStr().
+  bool ParsingFromInjectedStrBool = false;
+
+  /// True if while parsing an injected string we encountered an error.
+  bool ErrorWhileParsingFromInjectedStrBool = false;
+
+  /// True if we have finished parsing all available injected strings
+  /// produced by the metaprogram currently being evaluated.
+  bool NoMoreInjectedStrsAvailableBool = false;
+
+  /// The location to assign to tokens parsed from an injected source string.
+  SourceLocation CurInjectedStrLoc = SourceLocation();
+
+  /// This variable is used to ensure that, while temporarily lexing
+  /// a template instantiation's expand statement-generated source
+  /// strings, you know exactly when those strings have been fully
+  /// lexed so that upon returning to the instantiation point the
+  /// lexer stack is in the same state is was before.
+  size_t TotalNumLexersAtRAIIConstruction = 0;
 
   void updateOutOfDateIdentifier(IdentifierInfo &II) const;
 
@@ -1378,6 +1417,56 @@ public:
   /// or the identifier for an object-like macro.
   void EnterMacro(Token &Tok, SourceLocation ILEnd, MacroInfo *Macro,
                   MacroArgs *Args);
+
+  // These defs are trivial, but we put them into the cpp so we
+  // can insert debug messages without incurring huge extra compile
+  // times due to altering a much-used header:
+  size_t getTotalNumLexers() const;
+
+  /// True if Lex.ParsingFromInjectedStr().
+  bool ParsingFromInjectedStr() const;
+
+  /// True if while parsing an injected string we encountered an error.
+  bool ErrorWhileParsingFromInjectedStr() const;
+
+  /// True if we have finished parsing all available injected strings
+  /// produced by the metaprogram currently being evaluated.
+  bool NoMoreInjectedStrsAvailable() const;
+
+
+  void setNoMoreInjectedStrsAvailable(bool val);
+  void setErrorWhileParsingFromInjectedStr(bool val);
+
+  /// The location to assign to tokens parsed from an injected string,
+  /// for diagnostic purposes
+  SourceLocation curInjectedStrLoc() const;
+
+  /// Used for diagnostics in case of errors while parsing injected strings:
+  void setCurInjectedStrLoc(SourceLocation loc);
+
+  /// True if we are currently lexing artifically generated terminator
+  /// characters (')', '}') in an attempt to recover from an error encountered
+  /// while parsing injected strings.
+  bool LexingPretendTerminators() const {
+    return CurLexerKind == CLK_TerminatorPretendLexer;
+  }
+
+  /// Builds a new Lexer to parse an injected string and calls
+  /// EnterSourceFileWithLexer, thus pushing the string onto the
+  /// lexer stack to be processed.
+  void PushGeneratedSrcStr(StringRef str, SourceLocation loc);
+
+  /// This will be called before storing (via copying!)
+  /// CachedTokens and other cache info when constructing a
+  /// PreprocessorBrickWallRAII.
+  /// If there is anything to be done to clear out unneeded tokens
+  /// etc. before this copy, do those tasks within this function.
+  void CleanUpCache();
+
+#ifndef NDEBUG
+  void debugDispCachedTokens(const char *msg = "") const;
+  void debugDispLexerKinds(const char *msg = "") const;
+#endif
 
 private:
   /// Add a "macro" context to the top of the include stack,
@@ -2079,23 +2168,8 @@ public:
 private:
   friend void TokenLexer::ExpandFunctionArguments();
 
-  void PushIncludeMacroStack() {
-    assert(CurLexerKind != CLK_CachingLexer && "cannot push a caching lexer");
-    IncludeMacroStack.emplace_back(CurLexerKind, CurLexerSubmodule,
-                                   std::move(CurLexer), CurPPLexer,
-                                   std::move(CurTokenLexer), CurDirLookup);
-    CurPPLexer = nullptr;
-  }
-
-  void PopIncludeMacroStack() {
-    CurLexer = std::move(IncludeMacroStack.back().TheLexer);
-    CurPPLexer = IncludeMacroStack.back().ThePPLexer;
-    CurTokenLexer = std::move(IncludeMacroStack.back().TheTokenLexer);
-    CurDirLookup  = IncludeMacroStack.back().TheDirLookup;
-    CurLexerSubmodule = IncludeMacroStack.back().TheSubmodule;
-    CurLexerKind = IncludeMacroStack.back().CurLexerKind;
-    IncludeMacroStack.pop_back();
-  }
+  void PushIncludeMacroStack();
+  void PopIncludeMacroStack();
 
   void PropagateLineStartLeadingSpaceInfo(Token &Result);
 

@@ -325,6 +325,14 @@ enum class TemplateSubstitutionKind : char {
     /// lookup will search our outer scope.
     bool CombineWithOuterScope;
 
+    /// Whether InstantiatedLocal etc. methods should not only add
+    /// their decls to the LocalDecls member, but also to
+    /// SemaRef.Scope and SemaRef.IdResolver.
+    /// We need this for proper lookup whenever instantiating
+    /// a function with metaprograms containing __inj
+    /// statements.
+    const bool ShouldCopyToSemaScopeEtc;
+
     /// If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack = nullptr;
@@ -341,7 +349,9 @@ enum class TemplateSubstitutionKind : char {
   public:
     LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
         : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
-          CombineWithOuterScope(CombineWithOuterScope) {
+          CombineWithOuterScope(CombineWithOuterScope),
+          ShouldCopyToSemaScopeEtc(
+              SemaRef.getParsingIntoInstantiationStatus() == Sema::PII_func) {
       SemaRef.CurrentInstantiationScope = this;
     }
 
@@ -478,6 +488,8 @@ enum class TemplateSubstitutionKind : char {
     const MultiLevelTemplateArgumentList &TemplateArgs;
     Sema::LateInstantiatedAttrVec* LateAttrs = nullptr;
     LocalInstantiationScope *StartingScope = nullptr;
+    //FIXME this may not be needed (StringInjection)
+    ParsedAttributesWithRange *AccessAttrs = nullptr;
 
     /// A list of out-of-line class template partial
     /// specializations that will need to be instantiated after the
@@ -500,6 +512,19 @@ enum class TemplateSubstitutionKind : char {
         : SemaRef(SemaRef),
           SubstIndex(SemaRef, SemaRef.ArgumentPackSubstitutionIndex),
           Owner(Owner), TemplateArgs(TemplateArgs) {}
+
+    // FIXME may not be needed (StringInjection)
+    /// Possibly needed for parsing into a template
+    /// instantiation over multiple distinct metaprograms.
+    ParsedAttributesWithRange &getAccessAttrs() {
+      assert(AccessAttrs &&
+             "Only call this if you've constructed this "
+             "TemplateDeclInstantiator with nonnull AccessAttrs");
+      return *AccessAttrs;
+    }
+    void setAccessAttrs(ParsedAttributesWithRange &attrs) {
+      AccessAttrs = &attrs;
+    }
 
 // Define all the decl visitors using DeclNodes.inc
 #define DECL(DERIVED, BASE) \

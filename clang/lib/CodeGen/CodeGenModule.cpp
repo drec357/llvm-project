@@ -5947,6 +5947,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
 
   case Decl::StaticAssert:
+  case Decl::Metaprogram:
     // Nothing to do.
     break;
 

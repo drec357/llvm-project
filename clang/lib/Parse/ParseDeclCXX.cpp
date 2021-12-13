@@ -16,6 +16,7 @@
 #include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/Basic/Attributes.h"
 #include "clang/Basic/CharInfo.h"
+#include "clang/Basic/MetaprogramContext.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Parse/ParseDiagnostic.h"
@@ -2799,6 +2800,15 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, attrs, AS);
   }
 
+  // Metaprogram in class context
+  if (getLangOpts().StringInjection &&
+      Tok.is(tok::kw_consteval) &&
+      NextToken().is(tok::l_brace)) {
+    auto MetaCtx = MetaprogramContext(attrs, AS);
+    assert(MetaCtx.isClassContext());
+    return ParseMetaprogram(MetaCtx, /*Nested=*/ParsingFromInjectedStr());
+  }
+
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;
 
@@ -3627,22 +3637,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   //   brace-or-equal-initializers for non-static data members (including such
   //   things in nested classes).
   if (TagDecl && NonNestedClass) {
-    // We are not inside a nested class. This class and its nested classes
-    // are complete and we can parse the delayed portions of method
-    // declarations and the lexed inline method definitions, along with any
-    // delayed attributes.
-
-    SourceLocation SavedPrevTokLocation = PrevTokLocation;
-    ParseLexedPragmas(getCurrentClass());
-    ParseLexedAttributes(getCurrentClass());
-    ParseLexedMethodDeclarations(getCurrentClass());
-
-    // We've finished with all pending member declarations.
-    Actions.ActOnFinishCXXMemberDecls();
-
-    ParseLexedMemberInitializers(getCurrentClass());
-    ParseLexedMethodDefs(getCurrentClass());
-    PrevTokLocation = SavedPrevTokLocation;
+    HandleLateParsing();
 
     // We've finished parsing everything, including default argument
     // initializers.
@@ -3655,6 +3650,25 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   // Leave the class scope.
   ParsingDef.Pop();
   ClassScope.Exit();
+}
+
+void Parser::HandleLateParsing() {
+  // We are not inside a nested class. This class and its nested classes
+  // are complete and we can parse the delayed portions of method
+  // declarations and the lexed inline method definitions, along with any
+  // delayed attributes.
+
+  SourceLocation SavedPrevTokLocation = PrevTokLocation;
+  ParseLexedPragmas(getCurrentClass());
+  ParseLexedAttributes(getCurrentClass());
+  ParseLexedMethodDeclarations(getCurrentClass());
+
+  // We've finished with all pending member declarations.
+  Actions.ActOnFinishCXXMemberDecls();
+
+  ParseLexedMemberInitializers(getCurrentClass());
+  ParseLexedMethodDefs(getCurrentClass());
+  PrevTokLocation = SavedPrevTokLocation;
 }
 
 void Parser::DiagnoseUnexpectedNamespace(NamedDecl *D) {

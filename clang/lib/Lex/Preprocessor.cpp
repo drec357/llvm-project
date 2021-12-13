@@ -106,6 +106,7 @@ Preprocessor::Preprocessor(std::shared_ptr<PreprocessorOptions> PPOpts,
   ArgMacro = nullptr;
   InMacroArgPreExpansion = false;
   NumCachedTokenLexers = 0;
+  NumCachedInjectedStrLexers = 0;
   PragmasEnabled = true;
   ParsingIfOrElifDirective = false;
   PreprocessedOutput = false;
@@ -182,6 +183,9 @@ Preprocessor::~Preprocessor() {
   // before the code below that frees up the MacroArgCache list.
   std::fill(TokenLexerCache, TokenLexerCache + NumCachedTokenLexers, nullptr);
   CurTokenLexer.reset();
+
+  // Free any cached string injection lexers.
+  std::fill(InjectedStrLexerCache, InjectedStrLexerCache + NumCachedInjectedStrLexers, nullptr);
 
   // Free any cached MacroArgs.
   for (MacroArgs *ArgList = MacroArgCache; ArgList;)
@@ -377,7 +381,8 @@ StringRef Preprocessor::getLastMacroWithSpelling(
 
 void Preprocessor::recomputeCurLexerKind() {
   if (CurLexer)
-    CurLexerKind = CLK_Lexer;
+    CurLexerKind = (ParsingFromInjectedStr() ?
+                    CLK_InjectedStrLexer : CLK_Lexer);
   else if (CurTokenLexer)
     CurLexerKind = CLK_TokenLexer;
   else
@@ -644,6 +649,10 @@ void Preprocessor::SkipTokensWhileUsingPCH() {
     case CLK_LexAfterModuleImport:
       LexAfterModuleImport(Tok);
       break;
+    case CLK_InjectedStrLexer:
+    case CLK_TerminatorPretendLexer:
+      // FIXME do these need to be handled here?
+      llvm_unreachable("Unhandled lexer kind");
     }
     if (Tok.is(tok::eof) && !InPredefines) {
       ReachedMainFileEOF = true;
@@ -904,6 +913,37 @@ void Preprocessor::Lex(Token &Result) {
       break;
     case CLK_LexAfterModuleImport:
       ReturnedToken = LexAfterModuleImport(Result);
+      break;
+    case CLK_InjectedStrLexer:
+      if (!ParsingFromInjectedStr()) {
+        recomputeCurLexerKind();
+        continue;
+      }
+      assert(CurLexer);
+      assert(CurLexer->ParsingFromInjectedStr());
+      ReturnedToken = CurLexer->Lex(Result);
+      if (Result.getLocation().isInvalid())
+        ReturnedToken = NoMoreInjectedStrsAvailableBool;
+      break;
+    case CLK_TerminatorPretendLexer:
+      // The purpose of this lexer is to recover from an injected
+      // string parsing error involving unbalanced delimiters; it simply
+      // alternates through possible closing characters as long as necessary.
+      if (++CurTerminator > 100)
+        llvm_unreachable("Either something is calling Lex "
+                         "indiscriminately (i.e. without parsing "
+                         "anything), or you need to add another "
+                         "terminator token kind to the switch "
+                         "below");
+      switch (CurTerminator % 4) {
+        //^ be sure to increment the modulus if you
+        // add a case below
+      default: Result.setKind(tok::r_paren); break; // )
+      case 1:  Result.setKind(tok::r_square); break;// ]
+      case 2:  Result.setKind(tok::greater); break; // >
+      case 3:  Result.setKind(tok::r_brace); break; // }
+      }
+      ReturnedToken = true;
       break;
     }
   } while (!ReturnedToken);
@@ -1465,4 +1505,83 @@ void Preprocessor::createPreprocessingRecord() {
 
   Record = new PreprocessingRecord(getSourceManager());
   addPPCallbacks(std::unique_ptr<PPCallbacks>(Record));
+}
+
+void Preprocessor::PushGeneratedSrcStr(StringRef str, SourceLocation loc) {
+  assert(ParsingFromInjectedStr() &&
+         "This bool should have been set previously");
+  assert(*str.end() == '\0' &&
+         "InjectedStr not null terminated!");
+
+  // Create a new lexer and add it to the include stack.
+  if (CurPPLexer || CurTokenLexer) {
+    PushIncludeMacroStack();
+  }
+  assert(!CurLexer &&
+         "Expected this to be null after PushIncludeMacroStack");
+
+  // We make use of a cache of lexers to reduce malloc traffic,
+  // just like with the TokenLexers used to expand macros.
+  // We would otherwise have to do a new allocation for each
+  // __inj("...") statement, which would be
+  // a significant burden I have to imagine.
+  if (NumCachedInjectedStrLexers == 0) {
+    CurLexer = std::make_unique<Lexer>(loc, getLangOpts(),
+                                       str.begin(), str.begin(),
+                                       str.end(), *this);
+  } else {
+    assert(NumCachedInjectedStrLexers < InjectedStrLexerCacheSize);
+    assert(InjectedStrLexerCache[NumCachedInjectedStrLexers - 1]
+           && "Should not have added a null lexer to the cache!");
+    CurLexer = std::move(InjectedStrLexerCache[
+                         --NumCachedInjectedStrLexers]);
+    // Is it right to use FileLoc for the location?
+    // Seems to work okay, but perhaps not right.
+    CurLexer->FileLoc = loc;
+    CurLexer->InitLexer(str.begin(), str.begin(), str.end());
+  }
+  CurPPLexer = CurLexer.get();
+  assert(CurPPLexer);
+  assert(CurLexerKind != CLK_LexAfterModuleImport
+         || !ParsingFromInjectedStr() &&
+            "May be harmless, but didn't expect "
+            "CurLexerKind==CLK_LexAfterModuleImport while beginning "
+            "to process a generated source string -- revisit this "
+            "code to be sure CurLexerKind is set correctly.");
+  CurLexerKind = CLK_InjectedStrLexer;
+}
+SourceLocation Preprocessor::curInjectedStrLoc() const {
+  return CurInjectedStrLoc;
+}
+void Preprocessor::setCurInjectedStrLoc(SourceLocation loc) {
+  CurInjectedStrLoc = loc;
+}
+
+size_t Preprocessor::getTotalNumLexers() const {
+  assert(!CurPPLexer || !CurTokenLexer.get()
+         && "Expected only one of these at most could be nonnull");
+  return IncludeMacroStack.size() + (bool)CurPPLexer
+      + (bool)CurTokenLexer.get();
+}
+bool Preprocessor::ParsingFromInjectedStr() const {
+  return ParsingFromInjectedStrBool;
+}
+bool Preprocessor::ErrorWhileParsingFromInjectedStr() const {
+  return ErrorWhileParsingFromInjectedStrBool;
+}
+bool Preprocessor::NoMoreInjectedStrsAvailable() const {
+  assert(!InCachingLexMode() || this->ParsingFromInjectedStr()
+         && "If we're in caching lex mode when asking about this,"
+            "it's probably an error -- but if we're also requesting "
+            "a metaparse string, we'll handle that error soon -- but "
+            "I didn't expect you to ask about this in a case when we "
+            "would not handle that error, so need to address this.");
+
+  return NoMoreInjectedStrsAvailableBool;
+}
+void Preprocessor::setNoMoreInjectedStrsAvailable(bool val) {
+  NoMoreInjectedStrsAvailableBool = val;
+}
+void Preprocessor::setErrorWhileParsingFromInjectedStr(bool val) {
+  ErrorWhileParsingFromInjectedStrBool = val;
 }

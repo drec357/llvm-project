@@ -128,6 +128,10 @@ class Lexer : public PreprocessorLexer {
 
   bool HasLeadingEmptyMacro;
 
+  /// True if the buffer being lexed is a constant evaluated string literal
+  /// generated earlier in the compilation by string injection.
+  bool BufferIsInjectedStr = false;
+
   /// True if this is the first time we're lexing the input file.
   bool IsFirstTimeLexingFile;
 
@@ -208,6 +212,17 @@ public:
     // lexer when in raw mode.
     return BufferPtr == BufferEnd;
   }
+
+  /// True if the buffer being lexed is a constant evaluated string literal
+  /// generated earlier in the compilation by string injection.
+  bool ParsingFromInjectedStr() const { return BufferIsInjectedStr; }
+
+  /// Lexer constructor - Create a new lexer object for lexing the contents of
+  /// an injected string literal (which does not have an associated file
+  /// object, nor SourceLocations associated with each lexed character).
+  Lexer(SourceLocation fileloc, const LangOptions &langOpts,
+        const char *BufStart, const char *BufPtr, const char *BufEnd,
+        Preprocessor &PP);
 
   /// isKeepWhitespaceMode - Return true if the lexer should return tokens for
   /// every character in the file, including whitespace and comments.  This

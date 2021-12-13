@@ -296,6 +296,15 @@ Retry:
     SemiError = "co_return";
     break;
 
+  case tok::kw___inj:                // StringInjection
+    Res = ParseStringInjectionStmt(/*SpelledWithF=*/false);
+    SemiError = "__inj";
+    break;
+  case tok::kw___injf:               // StringInjection
+    Res = ParseStringInjectionStmt(/*SpelledWithF=*/true);
+    SemiError = "__injf";
+    break;
+
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);
     bool msAsm = false;

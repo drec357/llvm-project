@@ -32,6 +32,7 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/MetaprogramContext.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/SourceLocation.h"
@@ -109,9 +110,9 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       ImplicitCopyAssignmentHasConstParam(true),
       HasDeclaredCopyConstructorWithConstParam(false),
       HasDeclaredCopyAssignmentWithConstParam(false),
-      IsAnyDestructorNoReturn(false), IsLambda(false),
-      IsParsingBaseSpecifiers(false), ComputedVisibleConversions(false),
-      HasODRHash(false), Definition(D) {}
+      IsAnyDestructorNoReturn(false), HasDependentCodeInjectingMetaprograms(false),
+      IsLambda(false), IsParsingBaseSpecifiers(false),
+      ComputedVisibleConversions(false), HasODRHash(false), Definition(D) {}
 
 CXXBaseSpecifier *CXXRecordDecl::DefinitionData::getBasesSlowCase() const {
   return Bases.get(Definition->getASTContext().getExternalSource());
@@ -3362,6 +3363,69 @@ APValue &MSGuidDecl::getAsAPValue() const {
   }
 
   return APVal;
+}
+
+void MetaprogramDecl::anchor() {}
+
+MetaprogramDecl::MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc)
+    : Decl(Metaprogram, DC, KeywordLoc),
+      Representation(), Call(nullptr), MetaCtx(),
+      sr(StmtEmpty()), LambdaExpr(nullptr),
+      InstantiatedFrom(nullptr),
+      IsDependent(false), AlreadyRun(false)
+{}
+
+MetaprogramDecl::MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc,
+                                 const MetaprogramContext &MetaCtx,
+                                 FunctionDecl *Fn,
+                                 MetaprogramDecl *InstantiatedFrom)
+    : Decl(Decl::Metaprogram, DC, KeywordLoc),
+      Representation(Fn), Call(nullptr), MetaCtx(MetaCtx),
+      sr(StmtEmpty()), LambdaExpr(nullptr),
+      InstantiatedFrom(InstantiatedFrom),
+      IsDependent(false), AlreadyRun(false)
+{
+  if (MetaCtx.isClassContext())
+    setAccess(MetaCtx.cls.AS);
+}
+
+MetaprogramDecl::MetaprogramDecl(DeclContext *DC, SourceLocation KeywordLoc,
+                                 const MetaprogramContext &MetaCtx,
+                                 CXXRecordDecl *Closure,
+                                 MetaprogramDecl *InstantiatedFrom)
+    : Decl(Decl::Metaprogram, DC, KeywordLoc),
+      Representation(Closure), Call(nullptr), MetaCtx(MetaCtx),
+      sr(StmtEmpty()), LambdaExpr(nullptr),
+      InstantiatedFrom(InstantiatedFrom),
+      IsDependent(false), AlreadyRun(false)
+{
+  if (MetaCtx.isClassContext())
+    setAccess(MetaCtx.cls.AS);
+}
+
+bool MetaprogramDecl::hasBody() const {
+  if (Representation.isNull())
+    return false;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getImplicitFunctionDecl()
+                               : getImplicitClosureCallOperator();
+  return FD->hasBody();
+}
+
+Stmt *MetaprogramDecl::getBody() const {
+  if (Representation.isNull())
+    return nullptr;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getImplicitFunctionDecl()
+                               : getImplicitClosureCallOperator();
+  return FD->getBody();
+}
+
+SourceRange MetaprogramDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (Stmt *Body = getBody())
+    RangeEnd = Body->getEndLoc();
+  return SourceRange(getLocation(), RangeEnd);
 }
 
 static const char *getAccessName(AccessSpecifier AS) {

@@ -2188,6 +2188,37 @@ DEF_TRAVERSE_DECL(ParmVarDecl, {
 
 DEF_TRAVERSE_DECL(RequiresExprBodyDecl, {})
 
+DEF_TRAVERSE_DECL(MetaprogramDecl, {
+  // If the metaprogram has not yet run (usually because it D->isDependent()),
+  // we want to visit the underlying body of statements.  But we want to treat
+  // the invisible function or lambda wrapping those statements (named
+  // __metaprogdef) as implicit.
+  if (!D->alreadyRun()) {
+    if (getDerived().shouldVisitImplicitCode()) {
+      // Either of these should handle traversing the
+      // D->getBody() content:
+      if (D->hasFunctionRepresentation())
+        TRY_TO(TraverseDecl(D->getImplicitFunctionDecl()));
+      else
+        // This should handle traversing the getClosureDecl as well
+        TRY_TO(TraverseStmt(D->getImplicitLambdaExpr()));
+
+      // The expression that calls the metaprogram:
+      TRY_TO(TraverseStmt(D->getImplicitCallExpr()));
+    } else
+      // Traversal of dependent metaprogram *less* the implicit stuff:
+      // just traverse the enclosed statements.
+      TRY_TO(TraverseStmt(D->getBody()));
+  }
+  // Already-run metaprogram: this can no longer have any effect on the
+  // program; we keep it around only in case we want to reference it as sugar
+  // of the declarations it introduced.
+  // I.e. this metaprogram is really just a "husk" at this point, so we
+  // will not visit it at all.  (Arguably, we could treat it as implicit
+  // and visit it conditionally, but it is not really implicit, as implicit
+  // implies it does *something* implicitly, whereas this does not.)
+})
+
 #undef DEF_TRAVERSE_DECL
 
 // ----------------- Stmt traversal -----------------
@@ -2759,6 +2790,23 @@ DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, {})
 DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
+
+DEF_TRAVERSE_STMT(StringInjectionStmt, {
+  if (StringLiteral *WrittenFirstArg = S->getWrittenFirstArg()) {
+    assert(S->isSpelledWithF());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(WrittenFirstArg);
+    if (!getDerived().shouldVisitImplicitCode()) {
+      // Traverse only the odd Args (the even ones are
+      // implicitly generated sub strings of WrittenFirstArg)
+      ShouldVisitChildren = false;
+      for (unsigned I = 1; I < S->getNumArgs(); I+=2)
+        TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getArg(I));
+    }
+  }
+  // If !WrittenFirstArg (__inj), or if visiting
+  // implicit code you will visit all of getArgs() as
+  // children
+})
 
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {
   if (S->getLifetimeExtendedTemporaryDecl()) {

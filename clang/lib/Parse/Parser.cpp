@@ -921,6 +921,16 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     }
     goto dont_know;
 
+  case tok::kw_consteval:
+    // Metaprogram in file context
+    if (getLangOpts().StringInjection &&
+        NextToken().is(tok::l_brace)) {
+      auto MetaCtx = MetaprogramContext(attrs, DS);
+      assert(MetaCtx.isFileContext());
+      return ParseMetaprogram(MetaCtx, /*Nested=*/ParsingFromInjectedStr());
+    }
+    goto dont_know;
+
   case tok::kw_inline:
     if (getLangOpts().CPlusPlus) {
       tok::TokenKind NextKind = NextToken().getKind();

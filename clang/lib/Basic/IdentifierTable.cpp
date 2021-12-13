@@ -107,6 +107,7 @@ namespace {
     KEYCXX20      = 0x200000,
     KEYOPENCLCXX  = 0x400000,
     KEYMSCOMPAT   = 0x800000,
+    KEYSTRINGINJ  = 0x4000000,
     KEYSYCL       = 0x1000000,
     KEYREFLECTION = 0x2000000,
     KEYALLCXX = KEYCXX | KEYCXX11 | KEYCXX20,
@@ -154,6 +155,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   if (LangOpts.CPlusPlus20 && (Flags & KEYCONCEPTS)) return KS_Enabled;
   if (LangOpts.ReflectionTS && (Flags & KEYREFLECTION)) return KS_Enabled;
   if (LangOpts.Coroutines && (Flags & KEYCOROUTINES)) return KS_Enabled;
+  if (LangOpts.StringInjection && (Flags & KEYSTRINGINJ)) return KS_Extension;
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
   if (LangOpts.CPlusPlus && !LangOpts.CPlusPlus20 && (Flags & CHAR8SUPPORT))

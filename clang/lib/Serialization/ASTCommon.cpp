@@ -418,6 +418,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::Friend:
   case Decl::FriendTemplate:
   case Decl::StaticAssert:
+  case Decl::Metaprogram:
   case Decl::Block:
   case Decl::Captured:
   case Decl::ClassScopeFunctionSpecialization:

@@ -437,7 +437,8 @@ public:
   /// \returns true if an error occurred, false otherwise.
   bool TransformExprs(Expr *const *Inputs, unsigned NumInputs, bool IsCall,
                       SmallVectorImpl<Expr *> &Outputs,
-                      bool *ArgChanged = nullptr);
+                      bool *ArgChanged = nullptr,
+                      bool *DependentOutputs = nullptr);
 
   /// Transform the given declaration, which is referenced from a type
   /// or expression.
@@ -1497,6 +1498,17 @@ public:
 
   StmtResult RebuildCoroutineBodyStmt(CoroutineBodyStmt::CtorArgs Args) {
     return getSema().BuildCoroutineBodyStmt(Args);
+  }
+
+   /// Build a new __inj(...) statement.
+  StmtResult RebuildStringInjectionStmt(SourceLocation KeywordLoc,
+                                        SourceLocation LParenLoc,
+                                        SmallVectorImpl<Expr *> &Args,
+                                        SourceLocation RParenLoc,
+                                        bool AnyDependent,
+                                        StringLiteral *WrittenFirstArg) {
+    return getSema().ActOnStringInjectionStmt(
+        KeywordLoc, LParenLoc, Args, RParenLoc, AnyDependent, WrittenFirstArg);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -3986,7 +3998,15 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
                                             unsigned NumInputs,
                                             bool IsCall,
                                       SmallVectorImpl<Expr *> &Outputs,
-                                            bool *ArgChanged) {
+                                            bool *ArgChanged,
+                                            bool *DependentOutputs) {
+  auto UpdateDependence = [DependentOutputs](ExprResult Out) {
+    if (DependentOutputs && !*DependentOutputs &&
+        ( Out.get()->isValueDependent() ||
+          Out.get()->isTypeDependent() ))
+      *DependentOutputs = true; //an expansion is dependent
+  };
+
   for (unsigned I = 0; I != NumInputs; ++I) {
     // If requested, drop call arguments that need to be dropped.
     if (IsCall && getDerived().DropCallArgument(Inputs[I])) {
@@ -4033,6 +4053,8 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
 
         if (ArgChanged)
           *ArgChanged = true;
+
+        UpdateDependence(Out);
         Outputs.push_back(Out.get());
         continue;
       }
@@ -4056,6 +4078,7 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
             return true;
         }
 
+        UpdateDependence(Out);
         Outputs.push_back(Out.get());
       }
 
@@ -4073,6 +4096,7 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
         if (Out.isInvalid())
           return true;
 
+        UpdateDependence(Out);
         Outputs.push_back(Out.get());
       }
 
@@ -4088,6 +4112,7 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
     if (Result.get() != Inputs[I] && ArgChanged)
       *ArgChanged = true;
 
+    UpdateDependence(Result);
     Outputs.push_back(Result.get());
   }
 
@@ -8528,6 +8553,26 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformSEHLeaveStmt(SEHLeaveStmt *S) {
   return S;
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::
+TransformStringInjectionStmt(StringInjectionStmt *S) {
+  SmallVector<Expr *, 4> NewArgs;
+  bool ArgChanged = false;
+  bool AnyDependent = false;
+  if (getDerived().TransformExprs(S->arguments().begin(), S->arg_size(),
+          /*IsCall*/true, NewArgs, &ArgChanged, &AnyDependent))
+    return StmtError();
+
+  // If nothing changed, just retain the existing statement.
+  if (!getDerived().AlwaysRebuild() && !ArgChanged)
+    return S;
+
+  return RebuildStringInjectionStmt(S->getKeywordLoc(), S->getLParenLoc(),
+                                    NewArgs, S->getRParenLoc(), AnyDependent,
+                                    S->getWrittenFirstArg());
 }
 
 //===----------------------------------------------------------------------===//
@@ -13060,6 +13105,9 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
       NewCallOpTSI->getTypeLoc().castAs<FunctionProtoTypeLoc>().getParams(),
       E->getCallOperator()->getConstexprKind(),
       NewTrailingRequiresClause.get());
+
+  if (E->getCallOperator()->isMetaprogram())
+    NewCallOperator->setIsMetaprogram();
 
   LSI->CallOperator = NewCallOperator;
 

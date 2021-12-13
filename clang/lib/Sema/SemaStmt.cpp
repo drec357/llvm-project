@@ -77,6 +77,20 @@ StmtResult Sema::ActOnDeclStmt(DeclGroupPtrTy dg, SourceLocation StartLoc,
   // If we have an invalid decl, just return an error.
   if (DG.isNull()) return StmtError();
 
+  // If this was a MetaprogramDecl, which provides a non-empty getStmtResult()
+  // (indicating it had some injected content), repace it with the generated
+  // StmtResult:
+  if (DG.isSingleDecl()) {
+    if (MetaprogramDecl *MpD = dyn_cast<MetaprogramDecl>(DG.getSingleDecl())) {
+      if (!MpD->isDependent()) {
+        auto sr = MpD->getStmtResult();
+        if (sr.isUsable())
+          return sr;
+        return ActOnNullStmt(StartLoc);
+      }
+    }
+  }
+
   return new (Context) DeclStmt(DG, StartLoc, EndLoc);
 }
 
@@ -317,6 +331,14 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S, unsigned DiagID) {
                             R2, /*isCtor=*/false))
         return;
     }
+  } else if (const auto *LE = dyn_cast<LambdaExpr>(E)) {
+    // FIXME In a function context a metaprogram (`consteval {...}`) will be
+    // represented as a lambda which is called via constant evaluation; even
+    // though the type of the call operator is void, a warning about this
+    // result being unused shows up unless we manually suppress by returning
+    // here.
+    if (LE->getCallOperator()->isMetaprogram())
+      return;
   } else if (ShouldSuppress)
     return;
 

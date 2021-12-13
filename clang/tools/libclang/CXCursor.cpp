@@ -293,6 +293,10 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     K = CXCursor_UnexposedStmt;
     break;
 
+  case Stmt::StringInjectionStmtClass:
+    K = CXCursor_StringInjectionStmt;
+    break;
+
   case Stmt::ArrayTypeTraitExprClass:
   case Stmt::AsTypeExprClass:
   case Stmt::AtomicExprClass:

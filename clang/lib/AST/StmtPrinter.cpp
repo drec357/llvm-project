@@ -2449,6 +2449,28 @@ void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   PrintExpr(S->getOperand());
 }
 
+void StmtPrinter::VisitStringInjectionStmt(StringInjectionStmt *S) {
+  if (S->isSpelledWithF()) {
+    OS << " __injf(";
+    PrintExpr(S->getWrittenFirstArg());
+    // Only write the odd args (the even ones are
+    // substrings of the written first arg, which is not
+    // represented among Args):
+    for (unsigned i = 1; i < S->arg_size(); i = i+2) {
+      OS << ", ";
+      PrintExpr(S->getArg(i));
+    }
+  } else {
+    OS << "__inj(";
+    for (unsigned i = 0; i < S->arg_size(); ++i) {
+      if (i)
+        OS << ", ";
+      PrintExpr(S->getArg(i));
+    }
+    OS << ");";
+  }
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {
