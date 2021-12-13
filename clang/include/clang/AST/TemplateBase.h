@@ -82,6 +82,10 @@ public:
     /// that was provided for an integral non-type template parameter.
     Integral,
 
+    /// The template argument is an metaobject id value stored in an llvm::APInt
+    /// that was provided for an metaobject id non-type template parameter.
+    MetaobjectId,
+
     /// The template argument is a template name that was provided for a
     /// template template parameter.
     Template,
@@ -170,6 +174,10 @@ public:
   /// Construct an integral constant template argument. The memory to
   /// store the value is allocated with Ctx.
   TemplateArgument(ASTContext &Ctx, const llvm::APSInt &Value, QualType Type);
+
+  /// Construct an metaobject id template argument. The memory to
+  /// store the value is allocated with Ctx.
+  TemplateArgument(ASTContext &Ctx, const llvm::APInt &Value, QualType Type);
 
   /// Construct an integral constant template argument with the same
   /// value as Other but a different type.
@@ -329,9 +337,28 @@ public:
     return QualType::getFromOpaquePtr(Integer.Type);
   }
 
+  /// Retrieve the type of the metaobject id value.
+  QualType getMetaobjectIdType() const {
+    assert(getKind() == MetaobjectId && "Unexpected kind");
+    return QualType::getFromOpaquePtr(Integer.Type);
+  }
+
   void setIntegralType(QualType T) {
     assert(getKind() == Integral && "Unexpected kind");
     Integer.Type = T.getAsOpaquePtr();
+  }
+
+  /// Retrieve the template argument as an metaobject id value.
+  llvm::APInt getAsMetaobjectId() const {
+    assert(getKind() == MetaobjectId && "Unexpected kind");
+
+    using namespace llvm;
+
+    if (Integer.BitWidth <= 64)
+      return APInt(Integer.BitWidth, Integer.VAL);
+
+    unsigned NumWords = APInt::getNumWords(Integer.BitWidth);
+    return APInt(Integer.BitWidth, makeArrayRef(Integer.pVal, NumWords));
   }
 
   /// If this is a non-type template argument, get its type. Otherwise,
@@ -535,6 +562,11 @@ public:
 
   Expr *getSourceIntegralExpression() const {
     assert(Argument.getKind() == TemplateArgument::Integral);
+    return LocInfo.getAsExpr();
+  }
+
+  Expr *getSourceMetaobjectIdExpression() const {
+    assert(Argument.getKind() == TemplateArgument::MetaobjectId);
     return LocInfo.getAsExpr();
   }
 

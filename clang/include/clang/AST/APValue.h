@@ -117,10 +117,11 @@ template<> struct PointerLikeTypeTraits<clang::DynamicAllocLValue> {
 
 namespace clang {
 /// APValue - This class implements a discriminated union of [uninitialized]
-/// [APSInt] [APFloat], [Complex APSInt] [Complex APFloat], [Expr + Offset],
+/// [APInt] [APSInt] [APFloat], [Complex APSInt] [Complex APFloat], [Expr + Offset],
 /// [Vector: N * APValue], [Array: N * APValue]
 class APValue {
   typedef llvm::APFixedPoint APFixedPoint;
+  typedef llvm::APInt APInt;
   typedef llvm::APSInt APSInt;
   typedef llvm::APFloat APFloat;
 public:
@@ -140,7 +141,8 @@ public:
     Struct,
     Union,
     MemberPointer,
-    AddrLabelDiff
+    AddrLabelDiff,
+    MetaobjectId
   };
 
   class LValueBase {
@@ -307,6 +309,9 @@ private:
 
 public:
   APValue() : Kind(None) {}
+  explicit APValue(APInt I) : Kind(None) {
+    MakeMetaobjectId(); setMetaobjectId(std::move(I));
+  }
   explicit APValue(APSInt I) : Kind(None) {
     MakeInt(); setInt(std::move(I));
   }
@@ -402,6 +407,7 @@ public:
   bool isUnion() const { return Kind == Union; }
   bool isMemberPointer() const { return Kind == MemberPointer; }
   bool isAddrLabelDiff() const { return Kind == AddrLabelDiff; }
+  bool isMetaobjectId() const { return Kind == MetaobjectId; }
 
   void dump() const;
   void dump(raw_ostream &OS, const ASTContext &Context) const;
@@ -418,6 +424,14 @@ public:
   }
   const APSInt &getInt() const {
     return const_cast<APValue*>(this)->getInt();
+  }
+
+  APInt &getMetaobjectId() {
+    assert(isMetaobjectId() && "Invalid accessor");
+    return *(APInt *)(char *)&Data;
+  }
+  const APInt &getMetaobjectId() const {
+    return const_cast<APValue*>(this)->getMetaobjectId();
   }
 
   /// Try to convert this value to an integral constant. This works if it's an
@@ -619,6 +633,10 @@ public:
     ((AddrLabelDiffData *)(char *)&Data)->LHSExpr = LHSExpr;
     ((AddrLabelDiffData *)(char *)&Data)->RHSExpr = RHSExpr;
   }
+  void setMetaobjectId(APInt I) {
+    assert(isMetaobjectId() && "Invalid accessor");
+    *(APInt *)(char *)&Data = std::move(I);
+  }
 
 private:
   void DestroyDataAndMakeUninit();
@@ -670,6 +688,11 @@ private:
     assert(isAbsent() && "Bad state change");
     new ((void *)(char *)&Data) AddrLabelDiffData();
     Kind = AddrLabelDiff;
+  }
+  void MakeMetaobjectId() {
+    assert(isAbsent() && "Bad state change");
+    new ((void *)&Data) APInt();
+    Kind = MetaobjectId;
   }
 
 private:

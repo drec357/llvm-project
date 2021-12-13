@@ -1338,6 +1338,11 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   }
   case tok::kw___super:
   case tok::kw_decltype:
+  case tok::kw___unrefltype:
+    if (!getLangOpts().ReflectionTS && Tok.is(tok::kw___unrefltype)) {
+      Diag(Tok, diag::err_using_unrefltype_without_reflection);
+      return TPResult::False;
+    }
     // Annotate typenames and C++ scope specifiers.  If we get one, just
     // recurse to handle whatever we get.
     if (TryAnnotateTypeOrScopeToken())
@@ -1638,8 +1643,10 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw__Float16:
   case tok::kw___float128:
   case tok::kw___ibm128:
+  case tok::kw___metaobject_id:
   case tok::kw_void:
   case tok::annot_decltype:
+  case tok::annot___unrefltype:
 #define GENERIC_IMAGE_TYPE(ImgType, Id) case tok::kw_##ImgType##_t:
 #include "clang/Basic/OpenCLImageTypes.def"
     if (NextToken().is(tok::l_paren))
@@ -1718,6 +1725,7 @@ bool Parser::isCXXDeclarationSpecifierAType() {
   switch (Tok.getKind()) {
     // typename-specifier
   case tok::annot_decltype:
+  case tok::annot___unrefltype:
   case tok::annot_template_id:
   case tok::annot_typename:
   case tok::kw_typeof:
@@ -1755,6 +1763,7 @@ bool Parser::isCXXDeclarationSpecifierAType() {
   case tok::kw__Float16:
   case tok::kw___float128:
   case tok::kw___ibm128:
+  case tok::kw___metaobject_id:
   case tok::kw_void:
   case tok::kw___unknown_anytype:
   case tok::kw___auto_type:

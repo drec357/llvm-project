@@ -379,6 +379,11 @@ def err_unexpected_typedef_ident : Error<
 def warn_cxx98_compat_decltype : Warning<
   "'decltype' type specifier is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx20_compat_reflexpr : Warning<
+  "'reflexpr' type specifier is incompatible with C++20">,
+  InGroup<CXX20Compat>, DefaultIgnore;
+def err_unexpected_scope_on_base_reflexpr : Error<
+  "unexpected namespace scope prior to reflexpr">;
 def err_unexpected_scope_on_base_decltype : Error<
   "unexpected namespace scope prior to decltype">;
 def err_expected_class_name : Error<"expected class name">;
@@ -1070,6 +1075,21 @@ def err_external_source_symbol_duplicate_clause : Error<
 // Type safety attributes
 def err_type_safety_unknown_flag : Error<
   "invalid comparison flag %0; use 'layout_compatible' or 'must_be_null'">;
+
+// ReflectionTS
+def err_using_reflexpr_without_reflection : Error<
+  "'reflexpr' operator used without reflection support - compile with -freflection-ts">;
+def err_using_unrefltype_without_reflection : Error<
+  "'unrefltype' operator used without reflection support - compile with -freflection-ts">;
+def err_using_metaobject_id_without_reflection : Error<
+  "'__metaobject_id' type used without reflection support - compile with -freflection-ts">;
+def err_using_metaobject_op_without_reflection : Error<
+  "metaobject operation used without reflection support - compile with -freflection-ts">;
+def err_metaobject_op_arity : Error<
+  "Metaobject operation requires %0%select{| or more}1 argument%select{|s}2; "
+  "have %3 argument%s3">;
+def err_invalid_argument_for_reflexpr : Error<
+  "%0 cannot be used as argument for the reflexpr operator">;
 
 // Type traits
 def err_type_trait_arity : Error<

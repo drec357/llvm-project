@@ -167,6 +167,12 @@ def CoawaitExpr : StmtNode<CoroutineSuspendExpr>;
 def DependentCoawaitExpr : StmtNode<Expr>;
 def CoyieldExpr : StmtNode<CoroutineSuspendExpr>;
 
+// C++ Reflection TS expressions
+def ReflexprIdExpr : StmtNode<Expr>;
+def MetaobjectIdExpr : StmtNode<Expr>;
+def UnaryMetaobjectOpExpr : StmtNode<Expr>;
+def NaryMetaobjectOpExpr : StmtNode<Expr>;
+
 // C++20 Concepts expressions
 def ConceptSpecializationExpr : StmtNode<Expr>;
 def RequiresExpr : StmtNode<Expr>;

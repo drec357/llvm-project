@@ -72,6 +72,55 @@ ExprDependence clang::computeDependence(UnaryOperator *E,
   return Dep;
 }
 
+ExprDependence clang::computeDependence(ReflexprIdExpr *E) {
+  ExprDependence Deps = ExprDependence::None;
+
+  if (E->isArgumentType()) {
+    const ExprDependence ArgDeps = toExprDependence(
+        E->getArgumentType()->getDependence());
+    Deps = ArgDeps & ~ExprDependence::Type;
+    if (ArgDeps & ExprDependence::Type)
+      Deps |= ExprDependence::ValueInstantiation;
+  }
+
+  return Deps;
+}
+
+ExprDependence clang::computeDependence(MetaobjectIdExpr *E) {
+  // MetaobjectIdExpr is always created with known value
+  // of metaobject id so it is not dependent.
+  return ExprDependence::None;
+}
+
+ExprDependence clang::computeDependence(UnaryMetaobjectOpExpr *E) {
+  auto ArgDeps = E->getArgumentExpr()->getDependence();
+  auto Deps = ArgDeps & ~ExprDependence::Type;
+  if (ArgDeps & ExprDependence::Type)
+    Deps |= ExprDependence::Value;
+  
+  if (E->getType()->isDependentType()) {
+    Deps |= ExprDependence::TypeValueInstantiation;
+  }
+  // [reflexpr-ts] FIXME: re-check if this is correct
+  return Deps;
+}
+
+ExprDependence clang::computeDependence(NaryMetaobjectOpExpr *E) {
+  auto ArgDeps = ExprDependence::None;
+  for(unsigned a=0; a<E->getArity(); ++a) {
+    ArgDeps |= E->getArgumentExpr(a)->getDependence();
+  }
+  auto Deps = ArgDeps & ~ExprDependence::Type;
+  if (ArgDeps & ExprDependence::Type)
+    Deps |= ExprDependence::Value;
+
+  if (E->getType()->isDependentType()) {
+    Deps |= ExprDependence::TypeValueInstantiation;
+  }
+  // [reflexpr-ts] FIXME: re-check if this is correct
+  return Deps;
+}
+
 ExprDependence clang::computeDependence(UnaryExprOrTypeTraitExpr *E) {
   // Never type-dependent (C++ [temp.dep.expr]p3).
   // Value-dependent if the argument is type-dependent.

@@ -235,6 +235,7 @@ public:
   void VisitDeclarationTemplateArgument(const TemplateArgument &TA);
   void VisitNullPtrTemplateArgument(const TemplateArgument &TA);
   void VisitIntegralTemplateArgument(const TemplateArgument &TA);
+  void VisitMetaobjectIdTemplateArgument(const TemplateArgument &TA);
   void VisitTemplateTemplateArgument(const TemplateArgument &TA);
   void VisitTemplateExpansionTemplateArgument(const TemplateArgument &TA);
   void VisitExpressionTemplateArgument(const TemplateArgument &TA);

@@ -865,6 +865,76 @@ VisitOffsetOfExpr(const OffsetOfExpr *OOE,
 }
 
 
+// [reflection-ts]
+void ExprEngine::
+VisitReflexprIdExpr(const ReflexprIdExpr *Ex,
+                    ExplodedNode *Pred,
+                    ExplodedNodeSet &Dst) {
+  // FIXME: Prechecks eventually go in ::Visit().
+  ExplodedNodeSet CheckedSet;
+  getCheckerManager().runCheckersForPreStmt(CheckedSet, Pred, Ex, *this);
+
+  ExplodedNodeSet EvalSet;
+  StmtNodeBuilder Bldr(CheckedSet, EvalSet, *currBldrCtx);
+
+  for (ExplodedNodeSet::iterator I = CheckedSet.begin(), E = CheckedSet.end();
+       I != E; ++I) {
+
+    APSInt Value = Ex->EvaluateKnownConstInt(getContext());
+    CharUnits amt = CharUnits::fromQuantity(Value.getZExtValue());
+
+    ProgramStateRef state = (*I)->getState();
+    state = state->BindExpr(Ex, (*I)->getLocationContext(),
+                            svalBuilder.makeIntVal(amt.getQuantity(),
+                                                   Ex->getType()));
+    Bldr.generateNode(Ex, *I, state);
+  }
+
+  getCheckerManager().runCheckersForPostStmt(Dst, EvalSet, Ex, *this);
+}
+
+void ExprEngine::
+VisitMetaobjectIdExpr(const MetaobjectIdExpr *Ex,
+                      ExplodedNode *Pred,
+                      ExplodedNodeSet &Dst) {
+// [reflection-ts] FIXME
+}
+
+void ExprEngine::
+VisitUnaryMetaobjectOpExpr(const UnaryMetaobjectOpExpr *Ex,
+                           ExplodedNode *Pred,
+                           ExplodedNodeSet &Dst) {
+// [reflection-ts] FIXME
+}
+
+void ExprEngine::
+VisitNaryMetaobjectOpExpr(const NaryMetaobjectOpExpr *Ex,
+                          ExplodedNode *Pred,
+                          ExplodedNodeSet &Dst) {
+// [reflection-ts] FIXME
+  // FIXME: Prechecks eventually go in ::Visit().
+  ExplodedNodeSet CheckedSet;
+  getCheckerManager().runCheckersForPreStmt(CheckedSet, Pred, Ex, *this);
+
+  ExplodedNodeSet EvalSet;
+  StmtNodeBuilder Bldr(CheckedSet, EvalSet, *currBldrCtx);
+
+  for (ExplodedNodeSet::iterator I = CheckedSet.begin(), E = CheckedSet.end();
+       I != E; ++I) {
+
+    APSInt Value = Ex->EvaluateKnownConstInt(getContext());
+    CharUnits amt = CharUnits::fromQuantity(Value.getZExtValue());
+
+    ProgramStateRef state = (*I)->getState();
+    state = state->BindExpr(Ex, (*I)->getLocationContext(),
+                            svalBuilder.makeIntVal(amt.getQuantity(),
+                                                   Ex->getType()));
+    Bldr.generateNode(Ex, *I, state);
+  }
+
+  getCheckerManager().runCheckersForPostStmt(Dst, EvalSet, Ex, *this);
+}
+
 void ExprEngine::
 VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *Ex,
                               ExplodedNode *Pred,

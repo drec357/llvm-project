@@ -412,6 +412,19 @@ let Class = DecltypeType in {
   }]>;
 }
 
+let Class = UnrefltypeType in {
+  def : Property<"underlyingType", QualType> {
+    let Read = [{ node->getUnderlyingType() }];
+  }
+  def : Property<"expression", ExprRef> {
+    let Read = [{ node->getUnderlyingExpr() }];
+  }
+
+  def : Creator<[{
+    return ctx.getUnrefltypeType(expression, underlyingType);
+  }]>;
+}
+
 let Class = UnaryTransformType in {
   def : Property<"baseType", QualType> {
     let Read = [{ node->getBaseType() }];

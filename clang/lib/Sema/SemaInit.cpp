@@ -73,6 +73,11 @@ static StringInitFailureKind IsStringInit(Expr *Init, const ArrayType *AT,
   if (isa<ObjCEncodeExpr>(Init) && AT->getElementType()->isCharType())
     return SIF_None;
 
+  // Handle string-returning unary metaobject expressions.
+  if (UnaryMetaobjectOpExpr *UMOE = dyn_cast<UnaryMetaobjectOpExpr>(Init))
+    if (UMOE->hasStrResult())
+      return SIF_None;
+
   // Otherwise we can only handle string literals.
   StringLiteral *SL = dyn_cast<StringLiteral>(Init);
   if (!SL)
@@ -153,6 +158,9 @@ static void updateStringLiteralType(Expr *E, QualType Ty) {
     E->setType(Ty);
     E->setValueKind(VK_PRValue);
     if (isa<StringLiteral>(E) || isa<ObjCEncodeExpr>(E)) {
+      break;
+    } else if (UnaryMetaobjectOpExpr *UMOE = dyn_cast<UnaryMetaobjectOpExpr>(E)) {
+      assert(UMOE->hasStrResult());
       break;
     } else if (ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
       E = PE->getSubExpr();

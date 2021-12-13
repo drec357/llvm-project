@@ -376,6 +376,10 @@ APValue::APValue(const APValue &RHS) : Kind(None) {
     MakeAddrLabelDiff();
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
+  case MetaobjectId:
+    MakeMetaobjectId();
+    setMetaobjectId(RHS.getMetaobjectId());
+    break;
   }
 }
 
@@ -459,6 +463,8 @@ bool APValue::needsCleanup() const {
     return reinterpret_cast<const LV *>(&Data)->hasPathPtr();
   case MemberPointer:
     return reinterpret_cast<const MemberPointerData *>(&Data)->hasPathPtr();
+  case MetaobjectId:
+    return getMetaobjectId().needsCleanup();
   }
   llvm_unreachable("Unknown APValue kind!");
 }
@@ -611,6 +617,10 @@ void APValue::Profile(llvm::FoldingSetNodeID &ID) const {
     ID.AddInteger(isMemberPointerToDerivedMember());
     for (const CXXRecordDecl *D : getMemberPointerPath())
       ID.AddPointer(D);
+    return;
+
+  case MetaobjectId:
+    profileIntValue(ID, getMetaobjectId());
     return;
   }
 
@@ -860,6 +870,11 @@ void APValue::printPretty(raw_ostream &Out, const PrintingPolicy &Policy,
     Out << " - ";
     Out << "&&" << getAddrLabelDiffRHS()->getLabel()->getName();
     return;
+  case APValue::MetaobjectId:
+    Out << "__metaobject_id(";
+    Out << getMetaobjectId();
+    Out << ")";
+    return;
   }
   llvm_unreachable("Unknown APValue kind!");
 }
@@ -1058,6 +1073,7 @@ LinkageInfo LinkageComputer::getLVForValue(const APValue &V,
     break;
 
   case APValue::AddrLabelDiff:
+  case APValue::MetaobjectId:
     // Even for an inline function, it's not reasonable to treat a difference
     // between the addresses of labels as an external value.
     return LinkageInfo::internal();

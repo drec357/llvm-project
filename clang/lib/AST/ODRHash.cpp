@@ -169,6 +169,7 @@ void ODRHash::AddTemplateArgument(TemplateArgument TA) {
       break;
     case TemplateArgument::NullPtr:
     case TemplateArgument::Integral:
+    case TemplateArgument::MetaobjectId:
       break;
     case TemplateArgument::Template:
     case TemplateArgument::TemplateExpansion:
@@ -848,6 +849,16 @@ public:
 
   void VisitDependentDecltypeType(const DependentDecltypeType *T) {
     VisitDecltypeType(T);
+  }
+
+  void VisitUnrefltypeType(const UnrefltypeType *T) {
+    AddStmt(T->getUnderlyingExpr());
+    AddQualType(T->getUnderlyingType());
+    VisitType(T);
+  }
+
+  void VisitDependentUnrefltypeType(const DependentUnrefltypeType *T) {
+    VisitUnrefltypeType(T);
   }
 
   void VisitDeducedType(const DeducedType *T) {

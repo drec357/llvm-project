@@ -379,6 +379,9 @@ public:
   void VisitDecltypeType(const DecltypeType *T) {
     Visit(T->getUnderlyingExpr());
   }
+  void VisitUnrefltypeType(const UnrefltypeType *T) {
+    Visit(T->getUnderlyingExpr());
+  }
   void VisitUnaryTransformType(const UnaryTransformType *T) {
     Visit(T->getBaseType());
   }

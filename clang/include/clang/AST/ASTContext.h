@@ -239,6 +239,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
+  mutable llvm::FoldingSet<DependentUnrefltypeType> DependentUnrefltypeTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
   mutable llvm::FoldingSet<SubstTemplateTypeParmType>
@@ -292,6 +293,15 @@ class ASTContext : public RefCountedBase<ASTContext> {
   /// A cache from types to size and alignment information.
   using TypeInfoMap = llvm::DenseMap<const Type *, struct TypeInfo>;
   mutable TypeInfoMap MemoizedTypeInfo;
+
+  // [reflection-ts]
+  ReflexprIdExpr* EmptyReflexpr = nullptr;
+  ReflexprIdExpr* GlobalScopeReflexpr = nullptr;
+  ReflexprIdExpr* NoSpecifierReflexpr = nullptr;
+  using SpecifierReflexprMap = llvm::DenseMap<unsigned, ReflexprIdExpr*>;
+  SpecifierReflexprMap SpecifierReflexprs ;
+  using NamedDeclReflexprMap = llvm::DenseMap<const NamedDecl*, ReflexprIdExpr*>;
+  NamedDeclReflexprMap NamedDeclReflexprs;
 
   /// A cache from types to unadjusted alignment information. Only ARM and
   /// AArch64 targets need this information, keeping it separate prevents
@@ -399,6 +409,9 @@ class ASTContext : public RefCountedBase<ASTContext> {
 
   /// The identifier '__make_integer_seq'.
   mutable IdentifierInfo *MakeIntegerSeqName = nullptr;
+
+  /// The identifier '__unpack_metaobject_seq'.
+  mutable IdentifierInfo *UnpackMetaobjectSeqName = nullptr;
 
   /// The identifier '__type_pack_element'.
   mutable IdentifierInfo *TypePackElementName = nullptr;
@@ -594,6 +607,7 @@ private:
   TranslationUnitDecl *TUDecl = nullptr;
   mutable ExternCContextDecl *ExternCContext = nullptr;
   mutable BuiltinTemplateDecl *MakeIntegerSeqDecl = nullptr;
+  mutable BuiltinTemplateDecl *UnpackMetaobjectSeqDecl = nullptr;
   mutable BuiltinTemplateDecl *TypePackElementDecl = nullptr;
 
   /// The associated SourceManager object.
@@ -1069,6 +1083,7 @@ public:
 
   ExternCContextDecl *getExternCContextDecl() const;
   BuiltinTemplateDecl *getMakeIntegerSeqDecl() const;
+  BuiltinTemplateDecl *getUnpackMetaobjectSeqDecl() const;
   BuiltinTemplateDecl *getTypePackElementDecl() const;
 
   // Builtin Types.
@@ -1100,6 +1115,7 @@ public:
   CanQualType BFloat16Ty;
   CanQualType Float16Ty; // C11 extension ISO/IEC TS 18661-3
   CanQualType VoidPtrTy, NullPtrTy;
+  CanQualType MetaobjectIdTy;
   CanQualType DependentTy, OverloadTy, BoundMemberTy, UnknownAnyTy;
   CanQualType BuiltinFnTy;
   CanQualType PseudoObjectTy, ARCUnbridgedCastTy;
@@ -1676,6 +1692,9 @@ public:
   /// C++11 decltype.
   QualType getDecltypeType(Expr *e, QualType UnderlyingType) const;
 
+  /// ReflectionTS __unrefltype.
+  QualType getUnrefltypeType(Expr *e, QualType UnderlyingType) const;
+
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
                                  UnaryTransformType::UTTKind UKind) const;
@@ -1867,6 +1886,12 @@ public:
     if (!MakeIntegerSeqName)
       MakeIntegerSeqName = &Idents.get("__make_integer_seq");
     return MakeIntegerSeqName;
+  }
+
+  IdentifierInfo *getUnpackMetaobjectSeqName() const {
+    if (!UnpackMetaobjectSeqName)
+      UnpackMetaobjectSeqName = &Idents.get("__unpack_metaobject_seq");
+    return UnpackMetaobjectSeqName;
   }
 
   IdentifierInfo *getTypePackElementName() const {
@@ -2231,6 +2256,33 @@ public:
   static bool isObjCNSObjectType(QualType Ty) {
     return Ty->isObjCNSObjectType();
   }
+
+  //===--------------------------------------------------------------------===//
+  //                               Reflection TS
+  //===--------------------------------------------------------------------===//
+
+  llvm::APInt encodeMetaobject(const ReflexprIdExpr*);
+  ReflexprIdExpr* decodeMetaobject(const llvm::APInt&);
+
+  ReflexprIdExpr* cacheEmptyReflexpr(ReflexprIdExpr *E);
+  ReflexprIdExpr* findEmptyReflexpr() const {
+    return EmptyReflexpr;
+  }
+  ReflexprIdExpr* cacheGlobalScopeReflexpr(ReflexprIdExpr *E);
+  ReflexprIdExpr* findGlobalScopeReflexpr() const {
+    return GlobalScopeReflexpr;
+  }
+  ReflexprIdExpr* cacheNoSpecifierReflexpr(ReflexprIdExpr *E) {
+    NoSpecifierReflexpr = E;
+    return NoSpecifierReflexpr;
+  }
+  ReflexprIdExpr* findNoSpecifierReflexpr() const {
+    return NoSpecifierReflexpr;
+  }
+  ReflexprIdExpr* cacheSpecifierReflexpr(tok::TokenKind K, ReflexprIdExpr *E);
+  ReflexprIdExpr* findSpecifierReflexpr(tok::TokenKind K) const;
+  ReflexprIdExpr* cacheNamedDeclReflexpr(const NamedDecl *ND, ReflexprIdExpr *E);
+  ReflexprIdExpr* findNamedDeclReflexpr(const NamedDecl *ND) const;
 
   //===--------------------------------------------------------------------===//
   //                         Type Sizing and Analysis

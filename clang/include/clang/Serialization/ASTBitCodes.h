@@ -1070,6 +1070,9 @@ enum PredefinedTypeIDs {
   /// \brief The '__ibm128' type
   PREDEF_TYPE_IBM128_ID = 74,
 
+  /// \brief The '__metaobject_id' type
+  PREDEF_TYPE_METAOBJECT_ID_ID = 74,
+
 /// OpenCL image types with auto numeration
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix)                   \
   PREDEF_TYPE_##Id##_ID,
@@ -1202,8 +1205,11 @@ enum PredefinedDeclIDs {
   /// The internal '__NSConstantString' tag type.
   PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID = 16,
 
+  /// The internal '__unpack_metaobject_seq' template.
+  PREDEF_DECL_UNPACK_METAOBJECT_SEQ_ID = 17,
+
   /// The internal '__type_pack_element' template.
-  PREDEF_DECL_TYPE_PACK_ELEMENT_ID = 17,
+  PREDEF_DECL_TYPE_PACK_ELEMENT_ID = 18
 };
 
 /// The number of declaration IDs that are predefined.
@@ -1617,6 +1623,18 @@ enum StmtCode {
 
   /// An OffsetOfExpr record.
   EXPR_OFFSETOF,
+
+  /// A ReflexprIdExpr record.
+  EXPR_REFLEXPR_ID_ID,
+
+  /// A MetaobjectIdExpr record.
+  EXPR_METAOBJECT_ID_ID,
+
+  /// A UnaryMetaobjectOpExpr record.
+  EXPR_UNARY_METAOBJECT_OP_ID,
+
+  /// A NaryMetaobjectOpExpr record.
+  EXPR_NARY_METAOBJECT_OP_ID,
 
   /// A SizefAlignOfExpr record.
   EXPR_SIZEOF_ALIGN_OF,

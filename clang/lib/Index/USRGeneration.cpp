@@ -680,6 +680,8 @@ void USRGenerator::VisitType(QualType T) {
           c = 'k'; break;
         case BuiltinType::UInt128:
           c = 'j'; break;
+        case BuiltinType::MetaobjectId:
+          c = 'm'; break;
         case BuiltinType::Char_U:
         case BuiltinType::Char_S:
           c = 'C'; break;
@@ -985,6 +987,12 @@ void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
     Out << 'V';
     VisitType(Arg.getIntegralType());
     Out << Arg.getAsIntegral();
+    break;
+
+  case TemplateArgument::MetaobjectId:
+    Out << 'V';
+    VisitType(Arg.getMetaobjectIdType());
+    Out << Arg.getAsMetaobjectId();
     break;
   }
 }

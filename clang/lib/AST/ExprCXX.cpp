@@ -27,10 +27,13 @@
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -1702,6 +1705,2453 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
   void *Mem = C.Allocate(totalSizeToAlloc<TypeSourceInfo *>(NumArgs));
   return new (Mem) TypeTraitExpr(EmptyShell());
 }
+
+// [reflection-ts]
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_Nothing);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Nothing);
+  Argument.Nothing = nullptr;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType, MetaobjectKind kind,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(kind);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Nothing);
+  Argument.Nothing = nullptr;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType, tok::TokenKind specTok,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_Specifier);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Specifier);
+  Argument.SpecTok = specTok;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const NamedDecl *nDecl,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  if (isa<NamespaceAliasDecl>(nDecl)) {
+    setKind(MOK_NamespaceAlias);
+  } else if (isa<NamespaceDecl>(nDecl)) {
+    setKind(MOK_NamespaceScope);
+  } else if (isa<EnumDecl>(nDecl)) {
+    if (nDecl->isCXXClassMember()) {
+      setKind(MOK_MemberEnum);
+    } else {
+      setKind(MOK_Enum);
+    }
+  } else if (const auto *RD = dyn_cast<CXXRecordDecl>(nDecl)) {
+    if (nDecl->isCXXClassMember()) {
+      if (RD->isLambda()) {
+        setKind(MOK_MemberLambda);
+      } else if (RD->isUnion()) {
+        setKind(MOK_MemberRecord);
+      } else {
+        setKind(MOK_MemberClass);
+      }
+    } else {
+      if (RD->isLambda()) {
+        setKind(MOK_Lambda);
+      } else if (RD->isUnion()) {
+        setKind(MOK_Record);
+      } else {
+        setKind(MOK_Class);
+      }
+    }
+  } else if (isa<RecordDecl>(nDecl)) {
+    if (nDecl->isCXXClassMember()) {
+      setKind(MOK_MemberRecord);
+    } else {
+      setKind(MOK_Record);
+    }
+  } else if (const auto *TND = dyn_cast<TypedefNameDecl>(nDecl)) {
+    const Type *UT = TND->getUnderlyingType()->getUnqualifiedDesugaredType();
+    const TagDecl *TD = nullptr;
+    if (const auto *UTT = dyn_cast<TagType>(UT)) {
+      TD = UTT->getDecl();
+    }
+    if (nDecl->isCXXClassMember()) {
+      if (TD && TD->isUnion()) {
+        setKind(MOK_MemberRecordAlias);
+      } else if (TD && (TD->isClass() || TD->isStruct())) {
+        setKind(MOK_MemberClassAlias);
+      } else if (TD && TD->isEnum()) {
+        setKind(MOK_MemberEnumAlias);
+      } else {
+        if (TD && isa<ClassTemplateSpecializationDecl>(TD)) {
+          setKind(MOK_MemberClassAlias);
+        } else {
+          setKind(MOK_MemberTypeAlias);
+        }
+      }
+    } else {
+      if (TD && TD->isUnion()) {
+        setKind(MOK_RecordAlias);
+      } else if (TD && (TD->isClass() || TD->isStruct())) {
+        setKind(MOK_ClassAlias);
+      } else if (TD && TD->isEnum()) {
+        setKind(MOK_EnumAlias);
+      } else {
+        if (TD && isa<ClassTemplateSpecializationDecl>(TD)) {
+          setKind(MOK_ClassAlias);
+        } else {
+          setKind(MOK_TypeAlias);
+        }
+      }
+    }
+  } else if (const auto *TTPD = dyn_cast<TemplateTypeParmDecl>(nDecl)) {
+    if (TTPD->getTypeForDecl()->isEnumeralType()) {
+      setKind(MOK_TemplateEnumTypeParameter);
+    } else {
+      setKind(MOK_TemplateTypeParameter);
+    }
+  } else if (const auto *FD = dyn_cast<FunctionDecl>(nDecl)) {
+    if (isa<CXXConstructorDecl>(FD)) {
+      setKind(MOK_Constructor);
+    } else if (isa<CXXDestructorDecl>(FD)) {
+      setKind(MOK_Destructor);
+    } else if (isa<CXXConversionDecl>(FD)) {
+      setKind(MOK_ConversionOperator);
+    } else if (const auto *CMF = dyn_cast<CXXMethodDecl>(FD)) {
+      if (CMF->isMoveAssignmentOperator() ||
+          CMF->isCopyAssignmentOperator() ||
+          CMF->isOverloadedOperator()) {
+        setKind(MOK_MemberOperator);
+      } else
+        setKind(MOK_MemberFunction);
+    } else {
+      if (FD->isOverloadedOperator())
+        setKind(MOK_Operator);
+      else
+        setKind(MOK_Function);
+    }
+  } else if (isa<TypeDecl>(nDecl)) {
+    setKind(MOK_ScopedType);
+  } else if (isa<FieldDecl>(nDecl)) {
+    setKind(MOK_DataMember);
+  } else if (const auto *VD = dyn_cast<VarDecl>(nDecl)) {
+    if (isa<ParmVarDecl>(VD)) {
+      setKind(MOK_FunctionParameter);
+    } else if (VD->isStaticDataMember()) {
+      setKind(MOK_DataMember);
+    } else {
+      setKind(MOK_Variable);
+    }
+  } else if (isa<EnumConstantDecl>(nDecl)) {
+    setKind(MOK_Enumerator);
+  } else if (isa<CXXMethodDecl>(nDecl)) {
+    setKind(MOK_MemberFunction);
+  } else if (isa<FunctionDecl>(nDecl)) {
+    setKind(MOK_NamedFunction);
+  } else {
+    setKind(MOK_Object);
+  }
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_NamedDecl);
+  Argument.ReflDecl = nDecl;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const TypeSourceInfo *TInfo,
+                               bool removeSugar,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  const Type *RT = TInfo->getType().getTypePtr();
+
+  bool isAlias = false;
+  if (const auto *STTPT = dyn_cast<SubstTemplateTypeParmType>(RT)) {
+    isAlias = true;
+    RT = STTPT->getReplacementType().getTypePtr();
+  } else if (isa<TypedefType>(RT)) {
+    isAlias = true;
+  }
+  isAlias &= !removeSugar;
+
+  RT = RT->getUnqualifiedDesugaredType();
+
+  if (const auto *TTPT = dyn_cast<TemplateTypeParmType>(RT)) {
+    if (TTPT->isEnumeralType()) {
+      setKind(MOK_TemplateEnumTypeParameter);
+    } else {
+      setKind(MOK_TemplateTypeParameter);
+    }
+  } else if (isa<RecordType>(RT)) {
+    setKind(isAlias ? MOK_ClassAlias : MOK_Class);
+  } else if (isa<EnumType>(RT)) {
+    setKind(isAlias ? MOK_EnumAlias : MOK_Enum);
+  } else {
+    if (isAlias) {
+      setKind(MOK_TypeAlias);
+    } else {
+      const bool isNotScoped =
+        RT->isPointerType() ||
+        RT->isReferenceType() ||
+        RT->isFunctionType();
+      if (isNotScoped)
+        setKind(MOK_Type);
+      else
+        setKind(MOK_ScopedType);
+    }
+  }
+  Argument.TypeInfo = TInfo;
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_TypeInfo);
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(removeSugar);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
+                               const CXXBaseSpecifier *baseSpec,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_Base);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_BaseSpecifier);
+  Argument.BaseSpec = baseSpec;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(QualType resultType,
+                               const LambdaCapture *capture,
+                               SourceLocation OperatorLoc,
+                               SourceLocation RParenLoc)
+    : Expr(ReflexprIdExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OperatorLoc(OperatorLoc),
+      RParenLoc(RParenLoc) {
+
+  setKind(MOK_LambdaCapture);
+  setSeqKind(MOSK_None);
+  setArgKind(REAK_Capture);
+  Argument.Capture = capture;
+  setAccessibility(MOA_AllowPrivate);
+  setRemoveSugar(false);
+  setDependence(computeDependence(this));
+}
+
+ReflexprIdExpr::ReflexprIdExpr(const ReflexprIdExpr &that)
+    : Expr(ReflexprIdExprClass, that.getType(), VK_PRValue, OK_Ordinary),
+      OperatorLoc(that.getOperatorLoc()),
+      RParenLoc(that.getRParenLoc()) {
+
+  setKind(that.getKind());
+  setSeqKind(that.getSeqKind());
+  setArgKind(that.getArgKind());
+  switch (getArgKind()) {
+  case REAK_Nothing:
+    Argument.Nothing = that.Argument.Nothing;
+    break;
+  case REAK_Specifier:
+    Argument.SpecTok = that.Argument.SpecTok;
+    break;
+  case REAK_NamedDecl:
+    Argument.ReflDecl = that.Argument.ReflDecl;
+    break;
+  case REAK_TypeInfo:
+    Argument.TypeInfo = that.Argument.TypeInfo;
+    break;
+  case REAK_BaseSpecifier:
+    Argument.BaseSpec = that.Argument.BaseSpec;
+    break;
+  case REAK_Capture:
+    Argument.Capture = that.Argument.Capture;
+    break;
+  }
+  setAccessibility(that.getAccessibility());
+  setRemoveSugar(that.getRemoveSugar());
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getEmptyReflexprIdExpr(ASTContext &Ctx,
+                                       SourceLocation opLoc,
+                                       SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findEmptyReflexpr())
+    return E;
+  return Ctx.cacheEmptyReflexpr(new (Ctx) ReflexprIdExpr(
+        Ctx.MetaobjectIdTy, opLoc, endLoc));
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getGlobalScopeReflexprIdExpr(ASTContext &Ctx,
+                                             SourceLocation opLoc,
+                                             SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findGlobalScopeReflexpr())
+    return E;
+  return Ctx.cacheGlobalScopeReflexpr(new (Ctx) ReflexprIdExpr(
+      Ctx.MetaobjectIdTy, MOK_GlobalScope, opLoc, endLoc));
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getNoSpecifierReflexprIdExpr(ASTContext &Ctx,
+                                             SourceLocation opLoc,
+                                             SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findNoSpecifierReflexpr())
+    return E;
+  return Ctx.cacheNoSpecifierReflexpr(new (Ctx) ReflexprIdExpr(
+      Ctx.MetaobjectIdTy, MOK_Specifier, opLoc, endLoc));
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getSpecifierReflexprIdExpr(ASTContext &Ctx,
+                                           tok::TokenKind specTok,
+                                           SourceLocation opLoc,
+                                           SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findSpecifierReflexpr(specTok))
+    return E;
+  return Ctx.cacheSpecifierReflexpr(
+      specTok, new (Ctx) ReflexprIdExpr(Ctx.MetaobjectIdTy,
+                                        specTok, opLoc, endLoc));
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getNamedDeclReflexprIdExpr(ASTContext &Ctx,
+                                           const NamedDecl *nDecl,
+                                           SourceLocation opLoc,
+                                           SourceLocation endLoc) {
+  if (ReflexprIdExpr *E = Ctx.findNamedDeclReflexpr(nDecl))
+    return E;
+  return Ctx.cacheNamedDeclReflexpr(
+      nDecl, new (Ctx) ReflexprIdExpr(Ctx.MetaobjectIdTy, nDecl,
+                                      opLoc, endLoc));
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getTypeReflexprIdExpr(ASTContext &Ctx,
+                                      const TypeSourceInfo *TInfo,
+                                      bool removeSugar,
+                                      SourceLocation opLoc,
+                                      SourceLocation endLoc) {
+  // [reflection-ts] FIXME cache?
+  return new (Ctx) ReflexprIdExpr(Ctx.MetaobjectIdTy, TInfo,
+                                  removeSugar, opLoc, endLoc);
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getTypeReflexprIdExpr(ASTContext &Ctx,
+                                      QualType Ty, bool removeSugar,
+                                      SourceLocation opLoc,
+                                      SourceLocation endLoc) {
+  // [reflection-ts] FIXME cache?
+  return new (Ctx) ReflexprIdExpr(Ctx.MetaobjectIdTy,
+                                  Ctx.getTrivialTypeSourceInfo(Ty),
+                                  removeSugar, opLoc, endLoc);
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(ASTContext &Ctx,
+                                               const CXXBaseSpecifier *baseSpec,
+                                               SourceLocation opLoc,
+                                               SourceLocation endLoc) {
+  // [reflection-ts] FIXME cache?
+  return new (Ctx)
+      ReflexprIdExpr(Ctx.MetaobjectIdTy, baseSpec, opLoc, endLoc);
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(ASTContext &Ctx,
+                                               const LambdaCapture *capture,
+                                               SourceLocation opLoc,
+                                               SourceLocation endLoc) {
+  // [reflection-ts] FIXME cache?
+  return new (Ctx)
+      ReflexprIdExpr(Ctx.MetaobjectIdTy, capture, opLoc, endLoc);
+}
+
+ReflexprIdExpr *ReflexprIdExpr::getSeqReflexprIdExpr(ASTContext &Ctx,
+                                                     ReflexprIdExpr *that,
+                                                     MetaobjectSequenceKind MoSK) {
+  assert(that != nullptr);
+  // [reflection-ts] FIXME cache?
+  ReflexprIdExpr *Res = new (Ctx) ReflexprIdExpr(*that);
+  Res->setKind(MOK_ObjectSequence);
+  Res->setSeqKind(MoSK);
+  return Res;
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getHideProtectedReflexprIdExpr(ASTContext &Ctx,
+                                               ReflexprIdExpr *that) {
+  assert(that != nullptr);
+  // [reflection-ts] FIXME cache in ASTContext when possible
+  ReflexprIdExpr *Res = new (Ctx) ReflexprIdExpr(*that);
+  Res->setAccessibility(MOA_OnlyPublic);
+  return Res;
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::getHidePrivateReflexprIdExpr(ASTContext &Ctx,
+                                             ReflexprIdExpr *that) {
+  assert(that != nullptr);
+  // [reflection-ts] FIXME cache in ASTContext when possible
+  ReflexprIdExpr *Res = new (Ctx) ReflexprIdExpr(*that);
+  Res->setAccessibility(MOA_AllowProtected);
+  return Res;
+}
+
+ReflexprIdExpr*
+ReflexprIdExpr::fromMetaobjectId(ASTContext &Ctx,
+                                 const llvm::APInt& MoId) {
+  return Ctx.decodeMetaobject(MoId);
+}
+
+llvm::APInt
+ReflexprIdExpr::toMetaobjectId(ASTContext &Ctx,
+                               const ReflexprIdExpr *that) {
+  return Ctx.encodeMetaobject(that);
+}
+
+ReflexprIdExpr *ReflexprIdExpr::fromExpr(ASTContext &Ctx, Expr *E,
+                                         void *EvlInfo) {
+  if (ReflexprIdExpr *REE = dyn_cast<ReflexprIdExpr>(E)) {
+    return REE;
+  }
+
+  if (MetaobjectIdExpr *MIE = dyn_cast<MetaobjectIdExpr>(E)) {
+    return MIE->asReflexprIdExpr(Ctx);
+  }
+
+  if (const auto MoId = E->getMetaobjectIdExpr(EvlInfo, Ctx)) {
+    return fromMetaobjectId(Ctx, *MoId);
+  }
+
+  return nullptr;
+}
+
+StringRef ReflexprIdExpr::getMetaobjectKindName(MetaobjectKind MoK) {
+  switch (MoK) {
+  case MOK_Specifier:
+    return "a specifier";
+  case MOK_Base:
+    return "a base specifier";
+  case MOK_GlobalScope:
+    return "the global scope";
+  case MOK_NamespaceScope:
+    return "a namespace";
+  case MOK_NamespaceAlias:
+    return "a namespace alias";
+  case MOK_TemplateParameterScope:
+    return "a template parameter scope";
+  case MOK_Type:
+  case MOK_ScopedType:
+    return "a type";
+  case MOK_Enum:
+    return "an enum";
+  case MOK_Record:
+    return "a record";
+  case MOK_Class:
+    return "a class";
+  case MOK_Lambda:
+    return "a lambda";
+  case MOK_Function:
+  case MOK_NamedFunction:
+    return "a function";
+  case MOK_Constructor:
+    return "a constructor";
+  case MOK_Destructor:
+    return "a destructor";
+  case MOK_Operator:
+  case MOK_MemberOperator:
+    return "an operator";
+  case MOK_ConversionOperator:
+    return "a conversion operator";
+  case MOK_TypeAlias:
+    return "a type alias";
+  case MOK_EnumAlias:
+    return "a enum alias";
+  case MOK_RecordAlias:
+    return "a record alias";
+  case MOK_LambdaAlias:
+    return "a lambda alias";
+  case MOK_ClassAlias:
+    return "a class alias";
+  case MOK_TemplateClass:
+    return "a template class";
+  case MOK_TemplateTypeParameter:
+  case MOK_TemplateEnumTypeParameter:
+    return "a template type parameter";
+  case MOK_Variable:
+    return "a variable";
+  case MOK_LambdaCapture:
+    return "a lambda capture";
+  case MOK_FunctionParameter:
+    return "a function parameter";
+  case MOK_DataMember:
+    return "a data member";
+  case MOK_MemberType:
+    return "a member type";
+  case MOK_MemberTypeAlias:
+    return "a member type alias";
+  case MOK_MemberRecord:
+    return "a member record";
+  case MOK_MemberRecordAlias:
+    return "a member record alias";
+  case MOK_MemberLambda:
+    return "a member record";
+  case MOK_MemberLambdaAlias:
+    return "a member lambda alias";
+  case MOK_MemberClass:
+    return "a member class";
+  case MOK_MemberClassAlias:
+    return "a member class alias";
+  case MOK_MemberEnum:
+    return "a member enum";
+  case MOK_MemberEnumAlias:
+    return "a member enum alias";
+  case MOK_MemberFunction:
+    return "a member function";
+  case MOK_Enumerator:
+    return "a enumerator";
+  case MOK_ObjectSequence:
+    return "a metaobject sequence";
+  case MOK_Object:
+  case MOK_Nothing:
+    break;
+  }
+  return StringRef();
+}
+
+static MetaobjectConcept
+translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
+  // [reflection-ts] FIXME this needs to be synced with the TS
+  switch (MoK) {
+  case MOK_Specifier:
+    return MOC_Specifier;
+  case MOK_Base:
+    return MOC_Base;
+  case MOK_GlobalScope:
+    return MOC_GlobalScope;
+  case MOK_NamespaceScope:
+    return MOC_NamespaceScope;
+  case MOK_NamespaceAlias:
+    return MOC_NamespaceAlias;
+  case MOK_TemplateParameterScope:
+    return MOC_TemplateParameterScope;
+  case MOK_Type:
+    return MOC_Type;
+  case MOK_Enum:
+    return MOC_Enum;
+  case MOK_Record:
+    return MOC_Record;
+  case MOK_Class:
+    return MOC_Class;
+  case MOK_Lambda:
+    return MOC_Lambda;
+  case MOK_Function:
+    return MOC_Function;
+  case MOK_Constructor:
+    return MOC_Constructor;
+  case MOK_Destructor:
+    return MOC_Destructor;
+  case MOK_Operator:
+    return MOC_Operator;
+  case MOK_MemberOperator:
+    return MOC_MemberOperator;
+  case MOK_ConversionOperator:
+    return MOC_ConversionOperator;
+  case MOK_TypeAlias:
+    return MOC_TypeAlias;
+  case MOK_EnumAlias:
+    return MOC_EnumAlias;
+  case MOK_RecordAlias:
+    return MOC_RecordAlias;
+  case MOK_LambdaAlias:
+    return MOC_LambdaAlias;
+  case MOK_ClassAlias:
+    return MOC_ClassAlias;
+  case MOK_TemplateClass:
+    return MOC_TemplateClass;
+  case MOK_TemplateTypeParameter:
+    return MOC_TemplateTypeParameter;
+  case MOK_TemplateEnumTypeParameter:
+    return MOC_TemplateEnumTypeParameter;
+  case MOK_Variable:
+    return MOC_Variable;
+  case MOK_LambdaCapture:
+    return MOC_LambdaCapture;
+  case MOK_FunctionParameter:
+    return MOC_FunctionParameter;
+  case MOK_NamedFunction:
+    return MOC_NamedFunction;
+  case MOK_ScopedType:
+    return MOC_ScopedType;
+  case MOK_DataMember:
+    return MOC_DataMember;
+  case MOK_MemberType:
+    return MOC_MemberType;
+  case MOK_MemberTypeAlias:
+    return MOC_MemberTypeAlias;
+  case MOK_MemberRecord:
+    return MOC_MemberRecord;
+  case MOK_MemberRecordAlias:
+    return MOC_MemberRecordAlias;
+  case MOK_MemberLambda:
+    return MOC_MemberLambda;
+  case MOK_MemberLambdaAlias:
+    return MOC_MemberLambdaAlias;
+  case MOK_MemberClass:
+    return MOC_MemberClass;
+  case MOK_MemberClassAlias:
+    return MOC_MemberClassAlias;
+  case MOK_MemberEnum:
+    return MOC_MemberEnum;
+  case MOK_MemberEnumAlias:
+    return MOC_MemberEnumAlias;
+  case MOK_MemberFunction:
+    return MOC_MemberFunction;
+  case MOK_Enumerator:
+    return MOC_Enumerator;
+  case MOK_ObjectSequence:
+    return MOC_ObjectSequence;
+  case MOK_Object:
+    return MOC_Object;
+  case MOK_Nothing:
+    return MOC_Nothing;
+  }
+  llvm_unreachable("Metaobject kind not implemented!");
+}
+
+MetaobjectConcept ReflexprIdExpr::getCategory() const {
+  return translateMetaobjectKindToMetaobjectConcept(getKind());
+}
+
+const NamedDecl *ReflexprIdExpr::findTypeDecl(QualType Ty) {
+  if (const auto *TdT = dyn_cast<TypedefType>(Ty)) {
+    return TdT->getDecl();
+  } else if (const auto *TgT = dyn_cast<TagType>(Ty)) {
+    return TgT->getDecl();
+  } else if (const auto *TST = dyn_cast<TemplateSpecializationType>(Ty)) {
+    return TST->getTemplateName().getAsTemplateDecl();
+  } else if (const auto *STTPT = dyn_cast<SubstTemplateTypeParmType>(Ty)) {
+    return STTPT->getReplacedParameter()->getDecl();
+  } else if (const auto *TTPT = dyn_cast<TemplateTypeParmType>(Ty)) {
+    return TTPT->getDecl();
+  }
+  return nullptr;
+}
+
+QualType ReflexprIdExpr::getBaseArgumentType(ASTContext &,
+                                             bool removeSugar) const {
+
+  QualType Res = getArgumentType();
+  removeSugar |= isa<DecltypeType>(Res);
+
+  if (removeSugar)
+    Res = Res.getCanonicalType();
+
+  if (const auto *ET = dyn_cast<ElaboratedType>(Res)) {
+    Res = ET->getNamedType();
+  }
+
+  while (true) {
+    if (const auto *PT = dyn_cast<PointerType>(Res)) {
+      Res = PT->getPointeeType();
+    } else if (const auto *RT = dyn_cast<ReferenceType>(Res)) {
+      Res = RT->getPointeeType();
+    } else if (const auto *AT = dyn_cast<ArrayType>(Res)) {
+      Res = AT->getElementType();
+    } else {
+      break;
+    }
+  }
+
+  return Res;
+}
+
+
+const NamedDecl *ReflexprIdExpr::findArgumentNamedDecl(ASTContext &Ctx,
+                                                       bool removeSugar) const {
+  if (isArgumentNamedDecl())
+    return getArgumentNamedDecl();
+  if (isArgumentLambdaCapture())
+    return getArgumentLambdaCapture()->getCapturedVar();
+  if (isArgumentType())
+    return findTypeDecl(getBaseArgumentType(Ctx, removeSugar));
+  return nullptr;
+}
+
+const ValueDecl *ReflexprIdExpr::findArgumentValueDecl(ASTContext &Ctx) const {
+  return dyn_cast<ValueDecl>(findArgumentNamedDecl(Ctx, false));
+}
+
+bool ReflexprIdExpr::reflectsType() const {
+  if (isArgumentType())
+    return true;
+
+  if (isArgumentNamedDecl())
+    return isa<TypeDecl>(getArgumentNamedDecl());
+
+  return false;
+}
+
+QualType ReflexprIdExpr::getReflectedType() const {
+  if (isArgumentType())
+    return getArgumentType();
+
+  if (isArgumentNamedDecl()) {
+    if (const auto *TDND = dyn_cast<TypedefNameDecl>(getArgumentNamedDecl())) {
+      return TDND->getUnderlyingType();
+    } else if (const auto *TD = dyn_cast<TypeDecl>(getArgumentNamedDecl())) {
+      return QualType(TD->getTypeForDecl(), 0);
+    }
+  }
+
+  return QualType();
+}
+
+bool ReflexprIdExpr::isArgumentDependent() const {
+  if (isArgumentNamedDecl()) {
+    const NamedDecl *ND = getArgumentNamedDecl();
+    return isa<TemplateTypeParmDecl>(ND);
+  }
+  return false;
+}
+
+AccessSpecifier ReflexprIdExpr::getArgumentAccess(ASTContext &Ctx) const {
+  if (isArgumentBaseSpecifier()) {
+    return getArgumentBaseSpecifier()->getAccessSpecifier();
+  }
+
+  if (const NamedDecl *ND = findArgumentNamedDecl(Ctx, true)) {
+    return ND->getAccess();
+  }
+
+  return AS_none;
+}
+
+Stmt::child_range ReflexprIdExpr::children() {
+  // [reflection-ts] FIXME
+  return child_range(child_iterator(), child_iterator());
+}
+
+// MetaobjectIdExpr
+MetaobjectIdExpr::MetaobjectIdExpr(const llvm::APInt& V, QualType Ty, SourceLocation L)
+    : Expr(MetaobjectIdExprClass, Ty, VK_PRValue, OK_Ordinary),
+      Value(V.getZExtValue()), Loc(L) {
+  setDependence(computeDependence(this));
+}
+
+llvm::APInt MetaobjectIdExpr::getValue() const {
+  return llvm::APInt(sizeof(uintptr_t) * 8, Value);
+}
+void MetaobjectIdExpr::setValue(const llvm::APInt& V) {
+  Value = V.getZExtValue();
+}
+
+ReflexprIdExpr *MetaobjectIdExpr::asReflexprIdExpr(ASTContext &Context) const {
+  return ReflexprIdExpr::fromMetaobjectId(Context, getValue());
+}
+
+Stmt::child_range MetaobjectIdExpr::children() {
+  // [reflection-ts] FIXME
+  return child_range(child_iterator(),
+                     child_iterator());
+}
+
+// MetaobjectOpExprBase
+AccessSpecifier MetaobjectOpExprBase::getArgumentAccess(ASTContext &Ctx,
+                                                        ReflexprIdExpr *REE) {
+  return REE->getArgumentAccess(Ctx);
+}
+
+DeclRefExpr *MetaobjectOpExprBase::buildDeclRefExpr(ASTContext &Ctx,
+                                                    const ValueDecl* VD,
+                                                    ExprValueKind VK,
+                                                    SourceLocation Loc) {
+
+  return DeclRefExpr::Create(
+      Ctx, NestedNameSpecifierLoc(), Loc, const_cast<ValueDecl *>(VD),
+      false /*EnclVarOrCapture?*/, Loc, VD->getType(),
+      VK, const_cast<NamedDecl *>(dyn_cast<NamedDecl>(VD)));
+}
+
+bool MetaobjectOpExprBase::queryExprUIntValue(ASTContext &Ctx, uint64_t &value,
+                                              Expr *E) {
+  if (const auto apsi = E->getIntegerConstantExpr(Ctx)) {
+    value = apsi->getZExtValue();
+    return true;
+  }
+  return false;
+}
+
+ReflexprIdExpr *MetaobjectOpExprBase::getReflexprIdExpr(ASTContext &Ctx,
+                                                        Expr *E,
+                                                        void *EvlInfo) {
+  if (const auto MoId = E->getMetaobjectIdExpr(EvlInfo, Ctx)) {
+    return ReflexprIdExpr::fromMetaobjectId(Ctx, *MoId);
+  }
+
+  if (MetaobjectIdExpr *MOIE = dyn_cast<MetaobjectIdExpr>(E)) {
+    return MOIE->asReflexprIdExpr(Ctx);
+  }
+
+  if (ReflexprIdExpr *REE = dyn_cast<ReflexprIdExpr>(E)) {
+    return REE;
+  }
+  return nullptr;
+}
+
+llvm::APSInt MetaobjectOpExprBase::makeBoolResult(ASTContext&, QualType,
+                                                  bool v) {
+  // [reflection-ts] FIXME is there a better way to get true/false APSInt?
+  return v ? llvm::APSInt::getMaxValue(1, true)
+           : llvm::APSInt::getMinValue(1, true);
+}
+
+llvm::APSInt MetaobjectOpExprBase::makeSizeTResult(ASTContext &Ctx, QualType,
+                                                   uint64_t v) {
+  const unsigned w = Ctx.getTargetInfo().getTypeWidth(
+      Ctx.getTargetInfo().getSizeType());
+  return llvm::APSInt(llvm::APInt(w, v, false));
+}
+
+llvm::APSInt MetaobjectOpExprBase::makeULongResult(ASTContext &Ctx, QualType,
+                                                   uint64_t v) {
+  const unsigned w = Ctx.getTargetInfo().getLongWidth();
+  return llvm::APSInt(llvm::APInt(w, v, false));
+}
+
+llvm::APSInt MetaobjectOpExprBase::makeConstantResult(ASTContext& Ctx,
+                                                      QualType Ty,
+                                                      llvm::APSInt R) {
+  R = R.zextOrSelf(Ctx.getIntWidth(Ty));
+  return R;
+}
+
+llvm::APInt MetaobjectOpExprBase::makeMetaobjectResult(ASTContext &Ctx,
+                                                       ReflexprIdExpr *REE) {
+  return ReflexprIdExpr::toMetaobjectId(Ctx, REE);
+}
+
+llvm::APSInt MetaobjectOpExprBase::opGetConstant(ASTContext &Ctx,
+                                                 ReflexprIdExpr *REE) {
+  if (REE->isArgumentNamedDecl()) {
+    if (const auto *ND = REE->getArgumentNamedDecl()) {
+      if (const auto *ECD = dyn_cast<EnumConstantDecl>(ND)) {
+        return ECD->getInitVal();
+      }
+    }
+  }
+  llvm_unreachable("Unable to get constant value!");
+}
+
+// __metaobj_{operation}
+QualType UnaryMetaobjectOpExpr::getResultKindType(ASTContext &Ctx,
+                                                  UnaryMetaobjectOp Oper,
+                                                  MetaobjectOpResult OpRes,
+                                                  Expr *argExpr) {
+  bool isDependent =
+    (argExpr->getDependence() & ExprDependence::TypeValueInstantiation);
+
+  switch (OpRes) {
+    case MOOR_Metaobject:
+      return Ctx.MetaobjectIdTy;
+    case MOOR_SizeT:
+      return Ctx.getSizeType();
+    case MOOR_ULong:
+      return Ctx.UnsignedLongTy;
+    case MOOR_Bool:
+      return Ctx.BoolTy;
+    case MOOR_Constant:
+    case MOOR_Pointer: {
+      if (ReflexprIdExpr *REE = ReflexprIdExpr::fromExpr(Ctx, argExpr)) {
+        if (REE->isArgumentNamedDecl()) {
+          if (const auto *ND = REE->getArgumentNamedDecl()) {
+            if (const auto *VD = dyn_cast<ValueDecl>(ND)) {
+              return UnaryMetaobjectOpExpr::getValueDeclType(Ctx, Oper, VD);
+            }
+          }
+        }
+        if (REE->isArgumentLambdaCapture()) {
+          if (const auto *LC = REE->getArgumentLambdaCapture()) {
+            if (const auto *VD = LC->getCapturedVar()) {
+              return UnaryMetaobjectOpExpr::getValueDeclType(Ctx, Oper, VD);
+            }
+          }
+        }
+        llvm_unreachable("Unable to find the type of constant-returning operation");
+      }
+
+      if (isDependent)
+        return Ctx.DependentTy;
+
+      if (OpRes == MOOR_Constant)
+        return Ctx.getIntMaxType();
+
+      return Ctx.VoidPtrTy;
+    }
+    case MOOR_String: {
+      if (isDependent) {
+        return Ctx.DependentTy;
+      }
+      QualType CharTyConst = Ctx.CharTy.withConst();
+      if (ReflexprIdExpr *REE = ReflexprIdExpr::fromExpr(Ctx, argExpr)) {
+        std::string Value;
+        if (getStrResult(Ctx, Oper, REE, nullptr, Value)) {
+          return Ctx.getStringLiteralArrayType(CharTyConst, Value.size());
+        }
+        llvm_unreachable("Unable to find the type of string-returning operation");
+      }
+      return Ctx.getPointerType(CharTyConst);
+    }
+  }
+  return QualType();
+}
+
+UnaryMetaobjectOpExpr::UnaryMetaobjectOpExpr(ASTContext &Ctx,
+                                             UnaryMetaobjectOp Oper,
+                                             MetaobjectOpResult OpRes,
+                                             QualType resultType, Expr *argExpr,
+                                             ExprValueKind VK,
+                                             SourceLocation opLoc,
+                                             SourceLocation endLoc)
+    : Expr(UnaryMetaobjectOpExprClass, resultType, VK, OK_Ordinary),
+      ArgExpr(argExpr), OpLoc(opLoc), EndLoc(endLoc) {
+
+  setKind(Oper);
+  setResultKind(OpRes);
+  setDependence(computeDependence(this));
+}
+
+UnaryMetaobjectOpExpr *
+UnaryMetaobjectOpExpr::Create(ASTContext &Ctx, UnaryMetaobjectOp Oper,
+                              MetaobjectOpResult OpRes, Expr *argExpr,
+                              SourceLocation opLoc, SourceLocation endLoc) {
+  QualType resType = getResultKindType(Ctx, Oper, OpRes, argExpr);
+
+  return new (Ctx) UnaryMetaobjectOpExpr(Ctx, Oper, OpRes, resType, argExpr,
+                                         VK_PRValue, opLoc, endLoc);
+}
+
+StringRef UnaryMetaobjectOpExpr::getOperationSpelling(UnaryMetaobjectOp MoOp) {
+  switch (MoOp) {
+#define METAOBJECT_OP_1(Spelling, R, Name) \
+  case UMOO_##Name: \
+    return #Spelling;
+#include "clang/Basic/TokenKinds.def"
+      break;
+  }
+  return StringRef();
+}
+
+bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
+                                                  UnaryMetaobjectOp MoOp) {
+
+  MetaobjectConcept MoC = translateMetaobjectKindToMetaobjectConcept(MoK);
+  switch (MoOp) {
+  case UMOO_GetIdValue:
+#define METAOBJECT_TRAIT(S, Concept) case UMOO_IsMeta##Concept:
+#include "clang/Basic/TokenKinds.def"
+  case UMOO_SourceFileNameLen:
+  case UMOO_GetSourceFileName:
+  case UMOO_GetSourceLine:
+  case UMOO_GetSourceColumn:
+    return true;
+  case UMOO_IsUnnamed:
+  case UMOO_NameLen:
+  case UMOO_GetName:
+  case UMOO_DisplayNameLen:
+  case UMOO_GetDisplayName:
+    return conceptIsA(MoC, MOC_Named);
+  case UMOO_GetUnderlyingType:
+  case UMOO_IsScopedEnum:
+    return conceptIsA(MoC, MOC_Enum);
+  case UMOO_GetScope:
+    return conceptIsA(MoC, MOC_ScopeMember);
+  case UMOO_GetType:
+    return conceptIsA(MoC, MOC_Typed);
+  case UMOO_GetAliased:
+    return conceptIsA(MoC, MOC_Alias);
+  case UMOO_GetTagSpecifier:
+  case UMOO_IsEnum:
+  case UMOO_UsesClassKey:
+  case UMOO_UsesStructKey:
+  case UMOO_IsUnion:
+    return conceptIsA(MoC, MOC_TagType);
+  case UMOO_GetBaseClasses:
+  case UMOO_GetPublicBaseClasses:
+    return conceptIsA(MoC, MOC_Class);
+  case UMOO_GetMemberTypes:
+  case UMOO_GetPublicMemberTypes:
+  case UMOO_GetDataMembers:
+  case UMOO_GetPublicDataMembers:
+  case UMOO_GetMemberFunctions:
+  case UMOO_GetPublicMemberFunctions:
+  case UMOO_GetConstructors:
+  case UMOO_GetDestructors:
+  case UMOO_GetDestructor:
+  case UMOO_GetOperators:
+    return conceptIsA(MoC, MOC_Record);
+  case UMOO_GetEnumerators:
+    return conceptIsA(MoC, MOC_Enum);
+  case UMOO_GetParameters:
+    return conceptIsA(MoC, MOC_Callable);
+  case UMOO_GetCaptures:
+  case UMOO_UsesDefaultCopyCapture:
+  case UMOO_UsesDefaultReferenceCapture:
+  case UMOO_IsCallOperatorConst:
+    return conceptIsA(MoC, MOC_Lambda);
+  case UMOO_GetClass:
+    return conceptIsA(MoC, MOC_Base);
+  case UMOO_GetAccessSpecifier:
+  case UMOO_IsPublic:
+  case UMOO_IsProtected:
+  case UMOO_IsPrivate:
+    return conceptIsA(MoC, MOC_RecordMember) ||
+           conceptIsA(MoC, MOC_Base);
+  case UMOO_IsConstexpr:
+    return conceptIsA(MoC, MOC_Variable) ||
+           conceptIsA(MoC, MOC_Callable);
+  case UMOO_IsExplicit:
+    return conceptIsA(MoC, MOC_Constructor) ||
+           conceptIsA(MoC, MOC_ConversionOperator);
+  case UMOO_IsInline:
+    return conceptIsA(MoC, MOC_Namespace) ||
+           conceptIsA(MoC, MOC_Callable);
+  case UMOO_IsStatic:
+    return conceptIsA(MoC, MOC_Variable) ||
+           conceptIsA(MoC, MOC_MemberFunction);
+  case UMOO_IsVirtual:
+    return conceptIsA(MoC, MOC_Base) ||
+           conceptIsA(MoC, MOC_Destructor) ||
+           conceptIsA(MoC, MOC_MemberFunction);
+  case UMOO_IsPureVirtual:
+    return conceptIsA(MoC, MOC_Destructor) ||
+           conceptIsA(MoC, MOC_MemberFunction);
+  case UMOO_IsFinal:
+    return conceptIsA(MoC, MOC_Class) ||
+           conceptIsA(MoC, MOC_MemberFunction);
+  case UMOO_IsConst:
+  case UMOO_IsVolatile:
+  case UMOO_HasLValueRefQualifier:
+  case UMOO_HasRValueRefQualifier:
+    return conceptIsA(MoC, MOC_MemberFunction);
+  case UMOO_IsImplicitlyDeclared:
+  case UMOO_IsDefaulted:
+    return conceptIsA(MoC, MOC_SpecialMemberFunction);
+  case UMOO_GetPointer:
+    return conceptIsA(MoC, MOC_Variable) ||
+           conceptIsA(MoC, MOC_Function);
+  case UMOO_GetConstant:
+    return conceptIsA(MoC, MOC_Constant);
+  case UMOO_HideProtected:
+  case UMOO_HidePrivate:
+  case UMOO_IsEmpty:
+  case UMOO_GetSize:
+    return conceptIsA(MoC, MOC_ObjectSequence);
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::getTraitValue(UnaryMetaobjectOp MoOp,
+                                          MetaobjectConcept Cat) {
+  switch (MoOp) {
+#define METAOBJECT_TRAIT(S, Concept) \
+  case UMOO_IsMeta##Concept: \
+    return conceptIsA(Cat, MOC_##Concept);
+#include "clang/Basic/TokenKinds.def"
+  default:
+    llvm_unreachable("Not a metaobject trait operation");
+  }
+}
+
+uintptr_t UnaryMetaobjectOpExpr::opGetIdValue(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  return REE->getIdValue(Ctx).getZExtValue();
+}
+
+uint64_t UnaryMetaobjectOpExpr::opSourceFileNameLen(ASTContext &Ctx,
+                                                    ReflexprIdExpr *REE) {
+  return opGetSourceFileName(Ctx, REE).size();
+}
+
+std::string UnaryMetaobjectOpExpr::opGetSourceFileName(ASTContext &Ctx,
+                                                       ReflexprIdExpr *REE) {
+  assert(REE);
+
+  StringRef result;
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    SourceLocation L = ND->getLocation();
+    result = Ctx.getSourceManager().getFilename(L);
+  }
+  return result.str();
+}
+
+uint64_t UnaryMetaobjectOpExpr::opGetSourceLine(ASTContext &Ctx,
+                                                ReflexprIdExpr *REE) {
+  assert(REE);
+
+  unsigned result = 0;
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    SourceLocation L = ND->getLocation();
+    result = Ctx.getSourceManager().getSpellingLineNumber(L);
+  }
+  return result;
+}
+
+uint64_t UnaryMetaobjectOpExpr::opGetSourceColumn(ASTContext &Ctx,
+                                                  ReflexprIdExpr *REE) {
+  assert(REE);
+
+  unsigned result = 0;
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    SourceLocation L = ND->getLocation();
+    result = Ctx.getSourceManager().getSpellingColumnNumber(L);
+  }
+  return result;
+}
+
+bool UnaryMetaobjectOpExpr::opIsUnnamed(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentSpecifier()) {
+    return false;
+  } else if (REE->isArgumentNamedDecl()) {
+    return REE->getArgumentNamedDecl()->getName().empty();
+  } else if (REE->isArgumentLambdaCapture()) {
+    if (const auto *VD = REE->getArgumentLambdaCapture()->getCapturedVar()) {
+      return VD->getName().empty();
+    }
+  } else if (REE->isArgumentType()) {
+    QualType RT = REE->getBaseArgumentType(Ctx);
+
+    if (const NamedDecl *ND = ReflexprIdExpr::findTypeDecl(RT)) {
+      return ND->getName().empty();
+    } else if (isa<BuiltinType>(RT)) {
+      return false;
+    } else if (RT.getBaseTypeIdentifier()) {
+      return RT.getBaseTypeIdentifier()->getName().empty();
+    }
+  }
+  return true;
+}
+
+std::string UnaryMetaobjectOpExpr::getOperatorSpelling(
+    ASTContext &, OverloadedOperatorKind OOK) {
+  switch(OOK) {
+#define OVERLOADED_OPERATOR(Name, Spelling, Token, Unary, Binary, MemberOnly)  \
+    case OO_##Name: \
+      return Spelling;
+#include "clang/Basic/OperatorKinds.def"
+#undef OVERLOADED_OPERATOR
+    case OO_None:
+    case NUM_OVERLOADED_OPERATORS:
+      break;
+  }
+  return {};
+}
+
+std::string UnaryMetaobjectOpExpr::opGetName(ASTContext &Ctx,
+                                             ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentGlobalScope()) {
+    return {};
+  } else if (REE->isArgumentNoSpecifier()) {
+    return {};
+  } else if (REE->isArgumentSpecifier()) {
+    return tok::getKeywordSpelling(
+        REE->getArgumentSpecifierKind());
+  } else if (REE->isArgumentNamedDecl()) {
+    const auto *ND = REE->getArgumentNamedDecl();
+    if (const auto *CD = dyn_cast<CXXConstructorDecl>(ND)) {
+      return CD->getParent()->getName().str();
+    } else if (const auto *DD = dyn_cast<CXXDestructorDecl>(ND)) {
+      return "~" + DD->getParent()->getName().str();
+    } else if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      const std::string spelling =
+        getOperatorSpelling(Ctx, FD->getOverloadedOperator());
+      if (!spelling.empty()) {
+        if (std::ispunct(spelling.front())) {
+          return "operator" + spelling;
+        }
+        return "operator " + spelling;
+      }
+    }
+    return ND->getName().str();
+  } else if (REE->isArgumentLambdaCapture()) {
+    const auto *LC = REE->getArgumentLambdaCapture();
+    if (const auto *VD = LC->getCapturedVar()) {
+      return VD->getName().str();
+    }
+    if (LC->capturesThis()) {
+      return "this";
+    }
+    return {};
+  } else if (REE->isArgumentType()) {
+    QualType RT = REE->getBaseArgumentType(Ctx);
+
+    if (!RT.isNull()) {
+      if (const NamedDecl *ND = ReflexprIdExpr::findTypeDecl(RT)) {
+        return ND->getName().str();
+      } else if (const auto *BT = dyn_cast<BuiltinType>(RT)) {
+        return BT->getName(Ctx.getPrintingPolicy()).str();
+      } else if (RT.getBaseTypeIdentifier()) {
+        return RT.getBaseTypeIdentifier()->getName().str();
+      } else
+        return std::string();
+    }
+  }
+  llvm_unreachable("Unable to get metaobject name!");
+}
+
+uint64_t UnaryMetaobjectOpExpr::opNameLen(ASTContext &Ctx,
+                                          ReflexprIdExpr *REE) {
+  return opGetName(Ctx, REE).size();
+}
+
+std::string UnaryMetaobjectOpExpr::opGetDisplayName(ASTContext &Ctx,
+                                                    ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentGlobalScope()) {
+    return std::string("::", 2);
+  } else if (REE->isArgumentNamedDecl()) {
+    return REE->getArgumentNamedDecl()->getQualifiedNameAsString();
+  } else if (REE->isArgumentType()) {
+    QualType RT = REE->getArgumentType();
+    if (const NamedDecl *ND = ReflexprIdExpr::findTypeDecl(RT)) {
+      return ND->getQualifiedNameAsString();
+    }
+    // [reflection-ts] FIXME can we use this ?
+    // return TypeName::getFullyQualifiedName(RT, Ctx);
+    // otherwise we'd need to copy its functionality here
+  }
+  return opGetName(Ctx, REE);
+}
+
+uint64_t UnaryMetaobjectOpExpr::opDisplayNameLen(ASTContext &Ctx,
+                                                 ReflexprIdExpr *REE) {
+  return opGetDisplayName(Ctx, REE).size();
+}
+
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetScope(ASTContext &Ctx,
+                                                  ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const DeclContext *scopeDC = ND->getDeclContext()) {
+      if (const NamedDecl *nDecl = dyn_cast<NamedDecl>(scopeDC)) {
+        return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, nDecl);
+      }
+    }
+  }
+  // [reflection-ts] FIXME
+
+  return ReflexprIdExpr::getGlobalScopeReflexprIdExpr(Ctx);
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetType(ASTContext &Ctx,
+                                                 ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, FD->getReturnType(), true);
+    }
+    if (const auto *VD = dyn_cast<ValueDecl>(ND)) {
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, VD->getType(), true);
+    }
+    if (const auto *DD = dyn_cast<DeclaratorDecl>(ND)) {
+      if (TypeSourceInfo *TInfo = DD->getTypeSourceInfo()) {
+        return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, TInfo, true);
+      }
+    }
+    if (const DeclContext *scopeDC = ND->getDeclContext()) {
+      if (const auto *ED = dyn_cast<EnumDecl>(scopeDC)) {
+        return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, ED);
+      }
+    }
+  }
+  // [reflection-ts] FIXME
+  llvm_unreachable("Failed to get type!");
+
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetUnderlyingType(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentNamedDecl()) {
+    if (const auto *ED = dyn_cast<EnumDecl>(REE->getArgumentNamedDecl())) {
+      if (TypeSourceInfo *TInfo = ED->getIntegerTypeSourceInfo()) {
+        return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, TInfo, true);
+      }
+      QualType UTy = ED->getIntegerType();
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, UTy, true);
+    }
+  }
+
+  // [reflection-ts] FIXME
+  llvm_unreachable("Failed to get underlying type!");
+
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetAliased(ASTContext &Ctx,
+                                                    ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentType()) {
+    QualType RT = REE->getArgumentType();
+    if (const auto *STTPT = dyn_cast<SubstTemplateTypeParmType>(RT)) {
+      QualType Ty = STTPT->getReplacementType();
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, Ty, true);
+    } else if (const auto *TDT = dyn_cast<TypedefType>(RT)) {
+      QualType Ty = TDT->desugar();
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, Ty, true);
+    }
+  }
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const auto *TDND = dyn_cast<TypedefNameDecl>(ND)) {
+      QualType Ty = TDND->getUnderlyingType();
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, Ty, true);
+    } else if (const auto *TD = dyn_cast<TypeDecl>(ND)) {
+      QualType Ty(TD->getTypeForDecl(), 0);
+      return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, Ty, true);
+    } else if (const auto *NsAD = dyn_cast<NamespaceAliasDecl>(ND)) {
+      const NamespaceDecl *NsD = NsAD->getNamespace();
+      return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, NsD);
+    }
+  }
+  // [reflection-ts] FIXME
+  //llvm_unreachable("Failed to get aliased declaration or type!");
+
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetTagSpecifier(ASTContext &C,
+                                                         ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(C, true)) {
+    if (const TagDecl *TD = dyn_cast<TagDecl>(ND)) {
+      switch (TD->getTagKind()) {
+      case TTK_Enum:
+        return ReflexprIdExpr::getSpecifierReflexprIdExpr(C, tok::kw_enum);
+      case TTK_Union:
+        return ReflexprIdExpr::getSpecifierReflexprIdExpr(C, tok::kw_union);
+      case TTK_Class:
+        return ReflexprIdExpr::getSpecifierReflexprIdExpr(C, tok::kw_class);
+      case TTK_Struct:
+        return ReflexprIdExpr::getSpecifierReflexprIdExpr(C, tok::kw_struct);
+      case TTK_Interface:
+        return ReflexprIdExpr::getSpecifierReflexprIdExpr(C, tok::kw___interface);
+      }
+    }
+  }
+  return ReflexprIdExpr::getNoSpecifierReflexprIdExpr(C);
+}
+
+bool UnaryMetaobjectOpExpr::opIsEnum(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *TD = dyn_cast<TagDecl>(ND))
+      return TD->getTagKind() == TTK_Enum;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsUnion(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *TD = dyn_cast<TagDecl>(ND))
+      return TD->getTagKind() == TTK_Union;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesClassKey(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *TD = dyn_cast<TagDecl>(ND))
+      return TD->getTagKind() == TTK_Class;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesStructKey(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *TD = dyn_cast<TagDecl>(ND))
+      return TD->getTagKind() == TTK_Struct;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesDefaultCopyCapture(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      return RD->getLambdaCaptureDefault() == LCD_ByCopy;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opUsesDefaultReferenceCapture(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      return RD->getLambdaCaptureDefault() == LCD_ByRef;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsCallOperatorConst(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND))
+      if (RD->isLambda()) {
+        if (const auto *CMD = RD->getLambdaCallOperator()) {
+          return CMD->isConst();
+        }
+      }
+  }
+  return false;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetAccessSpecifier(ASTContext &Ctx,
+                                                            ReflexprIdExpr *REE) {
+  assert(REE);
+
+  switch (getArgumentAccess(Ctx, REE)) {
+  case AS_public:
+    return ReflexprIdExpr::getSpecifierReflexprIdExpr(Ctx, tok::kw_public);
+  case AS_protected:
+    return ReflexprIdExpr::getSpecifierReflexprIdExpr(Ctx, tok::kw_protected);
+  case AS_private:
+    return ReflexprIdExpr::getSpecifierReflexprIdExpr(Ctx, tok::kw_private);
+  case AS_none:
+    break;
+  }
+  return ReflexprIdExpr::getNoSpecifierReflexprIdExpr(Ctx);
+}
+
+bool UnaryMetaobjectOpExpr::opIsPublic(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  return getArgumentAccess(Ctx, REE) == AS_public;
+}
+bool UnaryMetaobjectOpExpr::opIsProtected(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  return getArgumentAccess(Ctx, REE) == AS_protected;
+}
+bool UnaryMetaobjectOpExpr::opIsPrivate(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  return getArgumentAccess(Ctx, REE) == AS_private;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetBaseClasses(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_BaseClasses);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetPublicBaseClasses(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_BaseClasses);
+  REE->setAccessibility(MOA_OnlyPublic);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetMemberTypes(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_MemberTypes);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetPublicMemberTypes(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_MemberTypes);
+  REE->setAccessibility(MOA_OnlyPublic);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetDataMembers(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_DataMembers);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetPublicDataMembers(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_DataMembers);
+  REE->setAccessibility(MOA_OnlyPublic);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetMemberFunctions(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_MemberFunctions);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetPublicMemberFunctions(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_MemberFunctions);
+  REE->setAccessibility(MOA_OnlyPublic);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetConstructors(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Constructors);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetDestructors(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Destructors);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetOperators(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Operators);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetEnumerators(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Enumerators);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetParameters(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Parameters);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetCaptures(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+  REE = ReflexprIdExpr::getSeqReflexprIdExpr(Ctx, REE, MOSK_Captures);
+  REE->setAccessibility(MOA_AllowPrivate);
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetDestructor(ASTContext &Ctx,
+                                                       ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const NamedDecl *ND = REE->findArgumentNamedDecl(Ctx)) {
+    if (const auto *RD = dyn_cast<CXXRecordDecl>(ND)) {
+      return ReflexprIdExpr::getNamedDeclReflexprIdExpr(
+          Ctx, RD->getDestructor());
+    }
+  }
+
+  return REE;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetClass(ASTContext &Ctx,
+                                                  ReflexprIdExpr *REE) {
+  assert(REE && REE->isArgumentBaseSpecifier());
+
+  const CXXBaseSpecifier *BS = REE->getArgumentBaseSpecifier();
+  return ReflexprIdExpr::getTypeReflexprIdExpr(Ctx, BS->getTypeSourceInfo(), true);
+}
+
+bool UnaryMetaobjectOpExpr::opIsScopedEnum(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentNamedDecl()) {
+    if (const auto *ED = dyn_cast<EnumDecl>(REE->getArgumentNamedDecl()))
+      return ED->isScoped();
+  }
+  return true;
+}
+
+bool UnaryMetaobjectOpExpr::opIsConstexpr(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *VD = dyn_cast<VarDecl>(ND))
+      return VD->isConstexpr();
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND))
+      return FD->isConstexpr();
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsExplicit(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CTD = dyn_cast<CXXConstructorDecl>(ND))
+      return CTD->isExplicit();
+    if (const auto *COD = dyn_cast<CXXConversionDecl>(ND))
+      return COD->isExplicit();
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsInline(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *VD = dyn_cast<VarDecl>(ND))
+      return VD->isInline() || VD->isInlineSpecified();
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND))
+      return FD->isInlineSpecified();
+    if (const auto *NSD = dyn_cast<NamespaceDecl>(ND))
+      return NSD->isInline();
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsStatic(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *VD = dyn_cast<VarDecl>(ND))
+      return VD->isStaticDataMember() || VD->isStaticLocal();
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      if (const auto *CMD = dyn_cast<CXXMethodDecl>(FD)) {
+        return CMD->isStatic();
+      }
+      return FD->isStatic();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsVirtual(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (REE->isArgumentBaseSpecifier()) {
+    return REE->getArgumentBaseSpecifier()->isVirtual();
+  }
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      if (const auto *CMD = dyn_cast<CXXMethodDecl>(FD)) {
+        return CMD->isVirtual();
+      }
+      return FD->isVirtualAsWritten();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsPureVirtual(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      if (const auto *CMD = dyn_cast<CXXMethodDecl>(FD)) {
+        return CMD->isVirtual() && CMD->isPure();
+      }
+      return FD->isVirtualAsWritten() && FD->isPure();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsFinal(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  // [reflection-ts] FIXME
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsConst(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->isConst();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsVolatile(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->isVolatile();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opHasLValueRefQualifier(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->getRefQualifier() == RQ_LValue;
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opHasRValueRefQualifier(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->getRefQualifier() == RQ_RValue;
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsImplicitlyDeclared(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      return !FD->isUserProvided() && !FD->isExplicitlyDefaulted();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsDefaulted(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      return !FD->isDefaulted();
+    }
+  }
+  return false;
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opHideProtected(ASTContext &Ctx,
+                                                       ReflexprIdExpr *REE) {
+  assert(REE);
+
+  return ReflexprIdExpr::getHideProtectedReflexprIdExpr(Ctx, REE);
+}
+
+ReflexprIdExpr *UnaryMetaobjectOpExpr::opHidePrivate(ASTContext &Ctx,
+                                                     ReflexprIdExpr *REE) {
+  assert(REE);
+
+  return ReflexprIdExpr::getHidePrivateReflexprIdExpr(Ctx, REE);
+}
+
+template <typename Action>
+static void applyOnMetaobjSeqElements(ASTContext &Ctx, Action &act,
+                                      ReflexprIdExpr *REE) {
+  assert(REE && REE->getKind() == MOK_ObjectSequence);
+
+  const MetaobjectAccessibility access = REE->getAccessibility();
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *DC = dyn_cast<DeclContext>(ND)) {
+      if (REE->getSeqKind() == MOSK_MemberTypes) {
+        auto matches = [](const Decl *d) -> bool {
+          if (isa<CXXRecordDecl>(d) && d->isImplicit()) {
+            return false;
+          }
+          return isa<TypeDecl>(d);
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_DataMembers) {
+        auto matches = [](const Decl *d) -> bool {
+          return isa<FieldDecl>(d) || isa<VarDecl>(d);
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_Constructors) {
+        auto matches = [](const Decl *d) -> bool {
+          return isa<CXXConstructorDecl>(d);
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_Destructors) {
+        auto matches = [](const Decl *d) -> bool {
+          return isa<CXXDestructorDecl>(d);
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_Operators) {
+        auto matches = [](const Decl *d) -> bool {
+          if (const auto *CMF = dyn_cast<CXXMethodDecl>(d)) {
+            return CMF->isMoveAssignmentOperator() ||
+                   CMF->isCopyAssignmentOperator() ||
+                   CMF->isOverloadedOperator();
+          }
+          return false;
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_MemberFunctions) {
+        auto matches = [](const Decl *d) -> bool {
+          if (const auto *CMF = dyn_cast<CXXMethodDecl>(d)) {
+            return !isa<CXXConstructorDecl>(CMF) &&
+                   !isa<CXXDestructorDecl>(CMF) &&
+                   !CMF->isMoveAssignmentOperator() &&
+                   !CMF->isCopyAssignmentOperator() &&
+                   !CMF->isOverloadedOperator();
+          }
+          return false;
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_Enumerators) {
+        auto matches = [](const Decl *d) -> bool {
+          return isa<EnumConstantDecl>(d);
+        };
+        act(matches, DC->decls_begin(), DC->decls_end(), access);
+      } else if (REE->getSeqKind() == MOSK_BaseClasses) {
+        if (const auto *RD = dyn_cast<CXXRecordDecl>(ND)) {
+          auto matches = [](const CXXBaseSpecifier &) -> bool { return true; };
+          act(matches, RD->bases_begin(), RD->bases_end(), access);
+        }
+      } else if (REE->getSeqKind() == MOSK_Parameters) {
+        if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+          auto matches = [](const Decl *) -> bool { return true; };
+          act(matches, FD->param_begin(), FD->param_end(), access);
+        }
+      } else if (REE->getSeqKind() == MOSK_Captures) {
+        if (const auto *FD = dyn_cast<CXXRecordDecl>(ND)) {
+          auto matches = [](const LambdaCapture&) -> bool { return true; };
+          act(matches, FD->captures_begin(), FD->captures_end(), access);
+        }
+      }
+    }
+  }
+}
+
+struct matchingMetaobjSeqElementUtils {
+  static bool isAccessible(const CXXBaseSpecifier &x, MetaobjectAccessibility access) {
+    switch (access) {
+      case MOA_AllowPrivate:
+        break;
+      case MOA_AllowProtected:
+        return x.getAccessSpecifier() != AS_private;
+      case MOA_OnlyPublic:
+      case MOA_ContextDependent: // [reflection-ts] FIXME
+        return x.getAccessSpecifier() != AS_private &&
+               x.getAccessSpecifier() != AS_protected;
+    }
+    return true;
+  }
+
+  static bool isAccessible(const Decl *x, MetaobjectAccessibility access) {
+    switch (access) {
+      case MOA_AllowPrivate:
+        break;
+      case MOA_AllowProtected:
+        return x->getAccess() != AS_private;
+      case MOA_OnlyPublic:
+      case MOA_ContextDependent: // [reflection-ts] FIXME
+        return x->getAccess() != AS_private &&
+               x->getAccess() != AS_protected;
+    }
+    return true;
+  }
+
+  static bool isAccessible(const LambdaCapture &, MetaobjectAccessibility) {
+    return true;
+  }
+};
+
+struct hasMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
+  bool isEmpty{true};
+
+  template <typename Predicate, typename Iter>
+  void operator()(Predicate &matches, Iter i, Iter e,
+                  MetaobjectAccessibility access) {
+
+    while (i != e) {
+      if (isAccessible(*i, access) && matches(*i)) {
+          isEmpty = false;
+          break;
+      }
+      ++i;
+    }
+  }
+};
+
+bool UnaryMetaobjectOpExpr::opIsEmpty(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  hasMatchingMetaobjSeqElements action;
+  applyOnMetaobjSeqElements(Ctx, action, REE);
+  return action.isEmpty;
+}
+
+struct countMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
+  uint64_t count{0ULL};
+
+  template <typename Predicate, typename Iter>
+  void operator()(Predicate &matches, Iter i, Iter e,
+                  MetaobjectAccessibility access) {
+
+    while (i != e) {
+      if (isAccessible(*i, access) && matches(*i)) {
+          ++count;
+      }
+      ++i;
+    }
+  }
+};
+
+uint64_t UnaryMetaobjectOpExpr::opGetSize(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  countMatchingMetaobjSeqElements action;
+  applyOnMetaobjSeqElements(Ctx, action, REE);
+  return action.count;
+}
+
+struct findMatchingMetaobjSeqElement : matchingMetaobjSeqElementUtils {
+  unsigned index;
+  union {
+    void *rptr;
+    const Decl *decl;
+    const CXXBaseSpecifier *base;
+    const LambdaCapture *capture;
+  } result;
+
+  void storeResult(const Decl *d) { result.decl = d; }
+  void storeResult(const CXXBaseSpecifier &b) { result.base = &b; }
+  void storeResult(const LambdaCapture &c) { result.capture = &c; }
+
+  findMatchingMetaobjSeqElement(unsigned idx) : index(idx) {
+    result.rptr = nullptr;
+  }
+
+  template <typename Predicate, typename Iter>
+  void operator()(Predicate &matches, Iter i, Iter e,
+                  MetaobjectAccessibility access) {
+    if (i != e) {
+      while (i != e) {
+        if (isAccessible(*i, access) && matches(*i)) {
+          if (index == 0)
+            break;
+          --index;
+        }
+        ++i;
+      }
+      assert((index == 0) && "Metaobject sequence index out of range");
+      storeResult(*i);
+    }
+  }
+};
+
+struct collectMatchingMetaobjSeqElements : matchingMetaobjSeqElementUtils {
+  std::vector<const void *> elements;
+
+  void pushElement(const Decl *d) { elements.push_back(d); }
+  void pushElement(const CXXBaseSpecifier &b) { elements.push_back(&b); }
+  void pushElement(const LambdaCapture &c) { elements.push_back(&c); }
+
+  collectMatchingMetaobjSeqElements(void) { elements.reserve(8); }
+
+  template <typename Predicate, typename Iter>
+  void operator()(Predicate matches, Iter i, Iter e,
+                  MetaobjectAccessibility access) {
+
+    while (i != e) {
+      if (isAccessible(*i, access) && matches(*i)) {
+        pushElement(*i);
+      }
+      ++i;
+    }
+  }
+};
+
+void UnaryMetaobjectOpExpr::unpackSequence(ASTContext &Ctx, ReflexprIdExpr *REE,
+                                           std::vector<llvm::APInt> &dest) {
+  assert(REE);
+
+  collectMatchingMetaobjSeqElements action;
+  applyOnMetaobjSeqElements(Ctx, action, REE);
+
+  dest.reserve(dest.size() + action.elements.size());
+
+  if (REE->getSeqKind() == MOSK_BaseClasses) {
+    for (const void *E : action.elements) {
+      const CXXBaseSpecifier *B = static_cast<const CXXBaseSpecifier *>(E);
+
+      ReflexprIdExpr *REE =
+        ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(Ctx, B);
+      dest.push_back(makeMetaobjectResult(Ctx, REE));
+    }
+  } else if (REE->getSeqKind() == MOSK_Captures) {
+    for (const void *E : action.elements) {
+      const LambdaCapture *C = static_cast<const LambdaCapture *>(E);
+
+      ReflexprIdExpr *REE =
+        ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(Ctx, C);
+      dest.push_back(makeMetaobjectResult(Ctx, REE));
+    }
+  } else {
+    for (const void *E : action.elements) {
+      const Decl *D = static_cast<const Decl *>(E);
+      const NamedDecl *ND = dyn_cast<NamedDecl>(D);
+      assert(ND != nullptr);
+
+      ReflexprIdExpr *REE =
+        ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, ND);
+      dest.push_back(makeMetaobjectResult(Ctx, REE));
+    }
+  }
+}
+
+bool UnaryMetaobjectOpExpr::hasIntResult() const {
+  switch (getResultKind()) {
+    case MOOR_SizeT:
+    case MOOR_ULong:
+    case MOOR_Bool:
+    case MOOR_Constant:
+      return true;
+    case MOOR_Pointer:
+    case MOOR_String:
+    case MOOR_Metaobject:
+      break;
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::getIntResult(ASTContext &Ctx, void *EvlInfo,
+                                         llvm::APSInt &result) const {
+  if (ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, EvlInfo)) {
+    const UnaryMetaobjectOp MoOp = getKind();
+    switch (MoOp) {
+#define METAOBJECT_INT_OP_1(S, OpRes, OpName) \
+      case UMOO_##OpName: \
+        result = make##OpRes##Result(Ctx, getType(), op##OpName(Ctx, REE)); \
+        return true;
+#include "clang/Basic/TokenKinds.def"
+#undef METAOBJECT_INT_OP_1
+
+#define METAOBJECT_TRAIT(S, Concept) \
+      case UMOO_IsMeta##Concept:
+#include "clang/Basic/TokenKinds.def"
+#undef METAOBJECT_TRAIT
+      {
+        MetaobjectConcept MoC =
+          translateMetaobjectKindToMetaobjectConcept(REE->getKind());
+        result = makeBoolResult(Ctx, getType(), getTraitValue(MoOp, MoC));
+        return true;
+      }
+      default: {
+        llvm_unreachable("This metaobject operation does not return int value!");
+      }
+    }
+    llvm_unreachable("Metaobject operation not implemented yet!");
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::hasObjResult() const {
+  return getResultKind() == MOOR_Metaobject;
+}
+
+bool UnaryMetaobjectOpExpr::getObjResult(ASTContext &Ctx, void *EvlInfo,
+                                         llvm::APInt &result) const {
+  if (ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, EvlInfo)) {
+    switch (getKind()) {
+#define METAOBJECT_OBJ_OP_1(S, OpRes, OpName) \
+      case UMOO_##OpName: \
+        result = make##OpRes##Result(Ctx, op##OpName(Ctx, REE)); \
+        return true;
+#include "clang/Basic/TokenKinds.def"
+#undef METAOBJECT_OBJ_OP_1
+      default: {
+        llvm_unreachable("This metaobject operation does not return metaobject!");
+      }
+    }
+    llvm_unreachable("Metaobject operation not implemented yet!");
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::hasStrResult() const {
+  return getResultKind() == MOOR_String;
+}
+
+bool UnaryMetaobjectOpExpr::getStrResult(ASTContext &Ctx, UnaryMetaobjectOp Oper,
+                                         ReflexprIdExpr *REE,
+                                         void *EvlInfo, std::string &result) {
+  assert(REE);
+  switch (Oper) {
+#define METAOBJECT_STR_OP_1(S, OpRes, OpName) \
+    case UMOO_##OpName: \
+      result = op##OpName(Ctx, REE); \
+      return true;
+#include "clang/Basic/TokenKinds.def"
+#undef METAOBJECT_STR_OP_1
+    default: {
+      llvm_unreachable("This metaobject operation does not return a string!");
+    }
+  }
+  llvm_unreachable("Metaobject operation not implemented yet!");
+}
+
+bool UnaryMetaobjectOpExpr::getStrResult(ASTContext &Ctx, void *EvlInfo,
+                                         std::string &result) const {
+  if (ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, EvlInfo)) {
+    return getStrResult(Ctx, getKind(), REE, EvlInfo, result);
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::hasPtrResult() const {
+  return getResultKind() == MOOR_Pointer;
+}
+
+const ValueDecl *UnaryMetaobjectOpExpr::getResultValueDecl(
+  ASTContext &Ctx, UnaryMetaobjectOp MoOp, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  switch (MoOp) {
+    case UMOO_GetPointer:
+    case UMOO_GetConstant: {
+      return REE->findArgumentValueDecl(Ctx);
+    }
+    default:
+      break;
+  }
+  llvm_unreachable("Failed to get value declaration from metaobject!");
+}
+
+const ValueDecl *UnaryMetaobjectOpExpr::getResultValueDecl(
+    ASTContext &Ctx, void *EvlInfo) const {
+  if (ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, EvlInfo)) {
+    return getResultValueDecl(Ctx, getKind(), REE);
+  }
+  llvm_unreachable("Failed to query Metaobject information!");
+}
+
+bool UnaryMetaobjectOpExpr::hasOpResultType() const {
+  switch (getKind()) {
+  case UMOO_GetSourceLine:
+  case UMOO_GetSourceColumn:
+  case UMOO_GetPointer:
+  case UMOO_GetConstant:
+    return true;
+  default:
+    break;
+  }
+  return false;
+}
+
+QualType UnaryMetaobjectOpExpr::getValueDeclType(ASTContext &Ctx,
+                                                 UnaryMetaobjectOp MoOp,
+                                                 const ValueDecl *valDecl) {
+  assert(valDecl != nullptr);
+
+  QualType result;
+
+  if (MoOp == UMOO_GetPointer) {
+    if (const VarDecl *varDecl = dyn_cast<VarDecl>(valDecl)) {
+      result = Ctx.getPointerType(varDecl->getType());
+    } else if (const FieldDecl *fldDecl = dyn_cast<FieldDecl>(valDecl)) {
+      const RecordDecl *RD = fldDecl->getParent();
+      QualType RecTy = Ctx.getRecordType(RD);
+      result = Ctx.getMemberPointerType(fldDecl->getType(), RecTy.getTypePtr());
+    } else if (const CXXMethodDecl *mthdDecl = dyn_cast<CXXMethodDecl>(valDecl)) {
+      if (mthdDecl->isStatic()) {
+        result = Ctx.getPointerType(mthdDecl->getType());
+      } else {
+        const RecordDecl *RD = mthdDecl->getParent();
+        QualType RecTy = Ctx.getRecordType(RD);
+        result = Ctx.getMemberPointerType(mthdDecl->getType(), RecTy.getTypePtr());
+      }
+    }
+  } else if (MoOp == UMOO_GetConstant) {
+    result = valDecl->getType();
+  }
+  return result;
+}
+
+Stmt::child_range UnaryMetaobjectOpExpr::children() {
+  return child_range(child_iterator(&ArgExpr + 0),
+                     child_iterator(&ArgExpr + 1));
+}
+
+QualType NaryMetaobjectOpExpr::getResultKindType(ASTContext &Ctx,
+                                                 NaryMetaobjectOp Oper,
+                                                 MetaobjectOpResult OpRes,
+                                                 unsigned arity, Expr **argExpr) {
+  switch (OpRes) {
+  case MOOR_Metaobject:
+    return Ctx.MetaobjectIdTy;
+  case MOOR_SizeT:
+    return Ctx.getSizeType();
+  case MOOR_ULong:
+    return Ctx.UnsignedLongTy;
+  case MOOR_Bool:
+    return Ctx.BoolTy;
+  case MOOR_Constant:
+  case MOOR_Pointer:
+  case MOOR_String:
+    break;
+  }
+  llvm_unreachable("invalid n-ary metaobject operation result");
+  return QualType();
+}
+
+NaryMetaobjectOpExpr::NaryMetaobjectOpExpr(ASTContext &Ctx,
+                                           NaryMetaobjectOp Oper,
+                                           MetaobjectOpResult OpRes,
+                                           QualType resultType, unsigned arity,
+                                           Expr **argExpr, SourceLocation opLoc,
+                                           SourceLocation endLoc)
+    : Expr(NaryMetaobjectOpExprClass, resultType, VK_PRValue, OK_Ordinary),
+      OpLoc(opLoc), EndLoc(endLoc) {
+
+  for (unsigned i = 0; i < arity; ++i) {
+    ArgExpr[i] = argExpr[i];
+  }
+  for (unsigned i = arity; i < MaxArity; ++i) {
+    ArgExpr[i] = nullptr;
+  }
+
+  setKind(Oper);
+  setResultKind(OpRes);
+  setDependence(computeDependence(this));
+}
+
+NaryMetaobjectOpExpr *
+NaryMetaobjectOpExpr::Create(ASTContext &Ctx, NaryMetaobjectOp Oper,
+                             MetaobjectOpResult OpRes,
+                             unsigned arity, Expr **argExpr,
+                             SourceLocation opLoc, SourceLocation endLoc) {
+  QualType resType = getResultKindType(Ctx, Oper, OpRes, arity, argExpr);
+
+  return new (Ctx) NaryMetaobjectOpExpr(Ctx, Oper, OpRes, resType,
+                                        arity, argExpr, opLoc, endLoc);
+}
+
+StringRef NaryMetaobjectOpExpr::getOperationSpelling(NaryMetaobjectOp MoOp) {
+  switch (MoOp) {
+#define METAOBJECT_OP_2(Spelling, R, Name) \
+  case NMOO_##Name: \
+    return #Spelling;
+#include "clang/Basic/TokenKinds.def"
+#undef METAOBJECT_OP_2
+  }
+  return StringRef();
+}
+
+bool NaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
+                                                 NaryMetaobjectOp MoOp) {
+
+  MetaobjectConcept MoC = translateMetaobjectKindToMetaobjectConcept(MoK);
+  switch (MoOp) {
+  case NMOO_ReflectsSame:
+    return conceptIsA(MoC, MOC_Object);
+  case NMOO_GetElement:
+    return conceptIsA(MoC, MOC_ObjectSequence);
+  }
+  return false;
+}
+
+bool NaryMetaobjectOpExpr::opReflectsSame(ASTContext &Ctx,
+                                          ReflexprIdExpr* REE1,
+                                          ReflexprIdExpr* REE2) {
+  if (REE1 == REE2)
+    return true;
+
+  if (REE1->isArgumentEmpty() && REE2->isArgumentEmpty())
+    return true;
+
+  if (REE1->isArgumentGlobalScope() && REE2->isArgumentGlobalScope())
+    return true;
+
+  if (REE1->isArgumentNoSpecifier() && REE2->isArgumentNoSpecifier())
+    return true;
+
+  if (REE1->isArgumentSpecifier() && REE2->isArgumentSpecifier()) {
+    return REE1->getArgumentSpecifierKind() ==
+           REE2->getArgumentSpecifierKind();
+  }
+
+  if (REE1->isArgumentNamedDecl() && REE2->isArgumentNamedDecl()) {
+    auto ND1 = REE1->getArgumentNamedDecl();
+    auto ND2 = REE2->getArgumentNamedDecl();
+    if (ND1 == ND2)
+      return true;
+    if (ND1->getDeclName() == ND2->getDeclName()) {
+      if (ND1->getDeclContext()->getRedeclContext()->Equals(
+              ND2->getDeclContext()->getRedeclContext())) {
+        if (ND1->getKind() == ND2->getKind()) {
+          // [reflection-ts] FIXME: fully qualified name or something else?
+          return ND1->getName() == ND2->getName();
+        }
+      }
+    }
+  }
+
+  if (REE1->isArgumentType() && REE2->isArgumentType()) {
+    auto Ty1 = REE1->getArgumentType();
+    auto Ty2 = REE2->getArgumentType();
+
+    if (Ctx.hasSameType(Ty1, Ty2)) {
+      return true;
+    }
+  }
+  // [reflection-ts] FIXME
+  return false;
+}
+
+ReflexprIdExpr *NaryMetaobjectOpExpr::opGetElement(ASTContext &Ctx,
+                                                   ReflexprIdExpr *REE,
+                                                   unsigned idx) {
+
+  findMatchingMetaobjSeqElement action(idx);
+  applyOnMetaobjSeqElements(Ctx, action, REE);
+  assert(action.result.decl || action.result.base || action.result.capture);
+
+  if (REE->getSeqKind() == MOSK_BaseClasses) {
+    const CXXBaseSpecifier *BS = action.result.base;
+    assert(BS != nullptr);
+
+    return ReflexprIdExpr::getBaseSpecifierReflexprIdExpr(Ctx, BS);
+  } else if (REE->getSeqKind() == MOSK_Captures) {
+    const LambdaCapture *LC = action.result.capture;
+    assert(LC != nullptr);
+
+    return ReflexprIdExpr::getLambdaCaptureReflexprIdExpr(Ctx, LC);
+  } else {
+    const NamedDecl *ND = dyn_cast<NamedDecl>(action.result.decl);
+    assert(ND != nullptr);
+
+    return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Ctx, ND);
+  }
+}
+
+bool NaryMetaobjectOpExpr::hasIntResult() const {
+  switch (getResultKind()) {
+    case MOOR_SizeT:
+    case MOOR_ULong:
+    case MOOR_Bool:
+    case MOOR_Constant:
+      return true;
+    case MOOR_Pointer:
+    case MOOR_String:
+    case MOOR_Metaobject:
+      break;
+  }
+  return false;
+}
+
+bool NaryMetaobjectOpExpr::getIntResult(ASTContext &Ctx, void *EvlInfo,
+                                        llvm::APSInt &result) const {
+  const auto opKind = getKind();
+  if(opKind == NMOO_ReflectsSame) {
+    ReflexprIdExpr *REE0 = getArgumentReflexprIdExpr(Ctx, 0, EvlInfo);
+    ReflexprIdExpr *REE1 = getArgumentReflexprIdExpr(Ctx, 1, EvlInfo);
+    if(REE0 && REE1) {
+      result = makeBoolResult(Ctx, getType(), opReflectsSame(Ctx, REE0, REE1));
+      return true;
+    }
+  }
+  return false;
+}
+
+bool NaryMetaobjectOpExpr::hasObjResult() const {
+  return getResultKind() == MOOR_Metaobject;
+}
+
+bool NaryMetaobjectOpExpr::getObjResult(ASTContext &Ctx, void *EvlInfo,
+                                        llvm::APInt &result) const {
+
+  const auto opKind = getKind();
+  if(opKind == NMOO_GetElement) {
+    ReflexprIdExpr *REE = getArgumentReflexprIdExpr(Ctx, 0, EvlInfo);
+    uint64_t index;
+    if (queryArgUIntValue(Ctx, index, 1)) {
+      result = makeMetaobjectResult(Ctx, opGetElement(Ctx, REE, index));
+      return true;
+    }
+  }
+  return false;
+}
+
+Stmt::child_range NaryMetaobjectOpExpr::children() {
+  return child_range(child_iterator(ArgExpr + 0),
+                     child_iterator(ArgExpr + getArity()));
+}
+// [reflection-ts]
 
 CUDAKernelCallExpr::CUDAKernelCallExpr(Expr *Fn, CallExpr *Config,
                                        ArrayRef<Expr *> Args, QualType Ty,

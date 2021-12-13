@@ -1024,6 +1024,8 @@ static void PrintCursor(CXCursor Cursor, const char *CommentSchemaFile) {
               printf(" [Template arg %d: kind: %d, intval: %lld]",
                      I, TAK, clang_Cursor_getTemplateArgumentValue(Cursor, I));
               break;
+            case CXTemplateArgumentKind_MetaobjectId:
+	      /* [reflection-ts] FIXME */
             default:
               printf(" [Template arg %d: kind: %d]\n", I, TAK);
           }

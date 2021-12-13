@@ -417,6 +417,7 @@ static bool isSimpleAPValue(const APValue &Value) {
   case APValue::LValue:
   case APValue::MemberPointer:
   case APValue::AddrLabelDiff:
+  case APValue::MetaobjectId:
     return true;
   case APValue::Vector:
   case APValue::Array:
@@ -603,6 +604,13 @@ void TextNodeDumper::Visit(const APValue &Value, QualType Ty) {
     return;
   case APValue::AddrLabelDiff:
     OS << "AddrLabelDiff <todo>";
+    return;
+  case APValue::MetaobjectId:
+    OS << "MetaobjectId ";
+    {
+      ColorScope Color(OS, ShowColors, ValueColor);
+      OS << Value.getInt();
+    }
     return;
   }
   llvm_unreachable("Unknown APValue kind!");
@@ -895,6 +903,10 @@ void TextNodeDumper::VisitNullPtrTemplateArgument(const TemplateArgument &) {
 
 void TextNodeDumper::VisitIntegralTemplateArgument(const TemplateArgument &TA) {
   OS << " integral " << TA.getAsIntegral();
+}
+
+void TextNodeDumper::VisitMetaobjectIdTemplateArgument(const TemplateArgument &TA) {
+  OS << " metaobject" << TA.getAsMetaobjectId();
 }
 
 void TextNodeDumper::VisitTemplateTemplateArgument(const TemplateArgument &TA) {

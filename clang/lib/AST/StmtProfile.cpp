@@ -1308,6 +1308,33 @@ void StmtProfiler::VisitOffsetOfExpr(const OffsetOfExpr *S) {
   VisitExpr(S);
 }
 
+// [reflection-ts]
+void StmtProfiler::VisitReflexprIdExpr(const ReflexprIdExpr *S) {
+  VisitExpr(S);
+  // [reflection-ts] FIXME: Expressions, Named decls?
+}
+
+void StmtProfiler::VisitMetaobjectIdExpr(const MetaobjectIdExpr *S) {
+  VisitExpr(S);
+  // [reflection-ts] FIXME
+}
+
+void
+StmtProfiler::VisitUnaryMetaobjectOpExpr(const UnaryMetaobjectOpExpr *S) {
+  VisitExpr(S);
+  ID.AddInteger(S->getKind());
+  ID.AddInteger(S->getResultKind());
+  // [reflection-ts] FIXME
+}
+
+void
+StmtProfiler::VisitNaryMetaobjectOpExpr(const NaryMetaobjectOpExpr *S) {
+  VisitExpr(S);
+  ID.AddInteger(S->getKind());
+  ID.AddInteger(S->getResultKind());
+  // [reflection-ts] FIXME
+}
+
 void
 StmtProfiler::VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *S) {
   VisitExpr(S);
@@ -2282,6 +2309,11 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
   case TemplateArgument::Integral:
     VisitType(Arg.getIntegralType());
     Arg.getAsIntegral().Profile(ID);
+    break;
+
+  case TemplateArgument::MetaobjectId:
+    VisitType(Arg.getMetaobjectIdType());
+    Arg.getAsMetaobjectId().Profile(ID);
     break;
 
   case TemplateArgument::Expression:

@@ -426,6 +426,10 @@ void TypeLocWriter::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
 
+void TypeLocWriter::VisitUnrefltypeTypeLoc(UnrefltypeTypeLoc TL) {
+  Record.AddSourceLocation(TL.getNameLoc());
+}
+
 void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   Record.AddSourceLocation(TL.getKWLoc());
   Record.AddSourceLocation(TL.getLParenLoc());
@@ -673,6 +677,9 @@ static void AddStmtsExprs(llvm::BitstreamWriter &Stream,
   RECORD(EXPR_PAREN);
   RECORD(EXPR_PAREN_LIST);
   RECORD(EXPR_UNARY_OPERATOR);
+  RECORD(EXPR_REFLEXPR_ID_ID);
+  RECORD(EXPR_METAOBJECT_ID_ID);
+  RECORD(EXPR_UNARY_METAOBJECT_OP_ID);
   RECORD(EXPR_SIZEOF_ALIGN_OF);
   RECORD(EXPR_ARRAY_SUBSCRIPT);
   RECORD(EXPR_CALL);
@@ -4483,6 +4490,8 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
                      PREDEF_DECL_CF_CONSTANT_STRING_ID);
   RegisterPredefDecl(Context.CFConstantStringTagDecl,
                      PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID);
+  RegisterPredefDecl(Context.UnpackMetaobjectSeqDecl,
+                     PREDEF_DECL_UNPACK_METAOBJECT_SEQ_ID);
   RegisterPredefDecl(Context.TypePackElementDecl,
                      PREDEF_DECL_TYPE_PACK_ELEMENT_ID);
 
@@ -5242,6 +5251,7 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
     break;
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Pack:

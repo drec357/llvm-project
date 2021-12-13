@@ -547,6 +547,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return llvm::APSInt::isSameValue(Arg1.getAsIntegral(),
                                      Arg2.getAsIntegral());
 
+  case TemplateArgument::MetaobjectId:
+    return llvm::APInt::isSameValue(Arg1.getAsIntegral(),
+                                    Arg2.getAsIntegral());
+
   case TemplateArgument::Declaration:
     return IsStructurallyEquivalent(Context, Arg1.getAsDecl(), Arg2.getAsDecl());
 
@@ -976,6 +980,13 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (!IsStructurallyEquivalent(Context,
                                   cast<DecltypeType>(T1)->getUnderlyingExpr(),
                                   cast<DecltypeType>(T2)->getUnderlyingExpr()))
+      return false;
+    break;
+
+  case Type::Unrefltype:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<UnrefltypeType>(T1)->getUnderlyingExpr(),
+                                  cast<UnrefltypeType>(T2)->getUnderlyingExpr()))
       return false;
     break;
 

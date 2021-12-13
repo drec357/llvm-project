@@ -586,6 +586,7 @@ private:
   void mangleFloatLiteral(QualType T, const llvm::APFloat &V);
   void mangleFixedPointLiteral();
   void mangleNullPointer(QualType T);
+  void mangleMetaobjectId(QualType T, const llvm::APInt &Value);
 
   void mangleMemberExprBase(const Expr *base, bool isArrow);
   void mangleMemberExpr(const Expr *base, bool isArrow,
@@ -1157,6 +1158,12 @@ void CXXNameMangler::mangleNullPointer(QualType T) {
   Out << 'L';
   mangleType(T);
   Out << "0E";
+}
+
+void CXXNameMangler::mangleMetaobjectId(QualType T, const llvm::APInt &Value) {
+  Out << 'L';
+  Value.print(Out, /*signed*/ false);
+  Out << "ME";
 }
 
 void CXXNameMangler::mangleNumber(const llvm::APSInt &Value) {
@@ -2282,6 +2289,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Unrefltype:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -2906,6 +2914,9 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
     break;
   case BuiltinType::UInt128:
     Out << 'o';
+    break;
+  case BuiltinType::MetaobjectId:
+    Out << "mo";
     break;
   case BuiltinType::SChar:
     Out << 'a';
@@ -3912,6 +3923,15 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
   Out << 'E';
 }
 
+void CXXNameMangler::mangleType(const UnrefltypeType *T) {
+  Expr *E = T->getUnderlyingExpr();
+
+  // [reflection-ts] FIXME
+  Out << "UT";
+  mangleExpression(E);
+  Out << 'E';
+}
+
 void CXXNameMangler::mangleType(const UnaryTransformType *T) {
   // If this is dependent, we need to record that. If not, we simply
   // mangle it as the underlying type since they are equivalent.
@@ -4554,6 +4574,52 @@ recurse:
     Out << "nx";
     mangleExpression(cast<CXXNoexceptExpr>(E)->getOperand());
     break;
+
+  case Expr::ReflexprIdExprClass: {
+    // Non-instantiation-dependent traits are an <expr-primary> integer literal.
+    const ReflexprIdExpr *REE = cast<ReflexprIdExpr>(E);
+
+    if (!REE->isInstantiationDependent()) {
+      // Itanium C++ ABI:
+      //   If the operand of a sizeof or alignof operator is not
+      //   instantiation-dependent it is encoded as an integer literal
+      //   reflecting the result of the operator.
+      //
+      //   If the result of the operator is implicitly converted to a known
+      //   integer type, that type is used for the literal; otherwise, the type
+      //   of std::size_t or std::ptrdiff_t is used.
+      QualType T = (ImplicitlyConvertedToType.isNull() ||
+                    !ImplicitlyConvertedToType->isIntegerType())? REE->getType()
+                                                    : ImplicitlyConvertedToType;
+      llvm::APSInt V = REE->EvaluateKnownConstInt(Context.getASTContext());
+      mangleIntegerLiteral(T, V);
+      break;
+    }
+
+    NotPrimaryExpr(); // But otherwise, they are not.
+
+    Out << "re";
+    // [reflection-ts] FIXME
+    break;
+  }
+
+  case Expr::MetaobjectIdExprClass: {
+    // [reflection-ts] FIXME
+    Out << "mo";
+    break;
+  }
+
+  case Expr::UnaryMetaobjectOpExprClass: {
+    // [reflection-ts] FIXME
+    Out << "mu";
+    break;
+  }
+
+  case Expr::NaryMetaobjectOpExprClass: {
+    // [reflection-ts] FIXME
+    Out << "mb";
+    break;
+  }
 
   case Expr::UnaryExprOrTypeTraitExprClass: {
     // Non-instantiation-dependent traits are an <expr-primary> integer literal.
@@ -5321,6 +5387,9 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A, bool NeedExactType) {
   case TemplateArgument::Integral:
     mangleIntegerLiteral(A.getIntegralType(), A.getAsIntegral());
     break;
+  case TemplateArgument::MetaobjectId:
+    mangleMetaobjectId(A.getMetaobjectIdType(), A.getAsMetaobjectId());
+    break;
   case TemplateArgument::Declaration: {
     //  <expr-primary> ::= L <mangled-name> E # external name
     ValueDecl *D = A.getAsDecl();
@@ -5417,6 +5486,7 @@ static bool isZeroInitialized(QualType T, const APValue &V) {
   case APValue::None:
   case APValue::Indeterminate:
   case APValue::AddrLabelDiff:
+  case APValue::MetaobjectId:
     return false;
 
   case APValue::Struct: {
@@ -5638,6 +5708,10 @@ void CXXNameMangler::mangleValueInTemplateArg(QualType T, const APValue &V,
     Out << 'E';
     break;
   }
+
+  case APValue::MetaobjectId:
+    mangleMetaobjectId(T, V.getMetaobjectId());
+    break;
 
   case APValue::Int:
     mangleIntegerLiteral(T, V.getInt());

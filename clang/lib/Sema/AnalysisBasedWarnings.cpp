@@ -1184,6 +1184,18 @@ namespace {
       return true;
     }
 
+    // [reflection-ts]
+    bool TraverseReflexprIdExpr(ReflexprIdExpr*) {
+      // [reflection-ts] FIXME
+      return true;
+    }
+
+    // [reflection-ts]
+    bool TraverseMetaobjectIdExpr(MetaobjectIdExpr*) {
+      // [reflection-ts] FIXME
+      return true;
+    }
+
   private:
 
     static const AttributedStmt *asFallThroughAttr(const Stmt *S) {

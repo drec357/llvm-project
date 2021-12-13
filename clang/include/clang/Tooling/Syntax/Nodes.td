@@ -275,6 +275,12 @@ def GlobalNameSpecifier : Unconstrained<NameSpecifier> {
     before the first `::`
   }];
 }
+def ReflexprNameSpecifier : Unconstrained<NameSpecifier> {
+  let documentation = [{
+    A name specifier holding a reflexpr, of the form: `reflexpr ( expression ) `
+    e.g. the `reflexpr(s)` in `reflexpr(s)::size`.
+  }];
+}
 def DecltypeNameSpecifier : Unconstrained<NameSpecifier> {
   let documentation = [{
     A name specifier holding a decltype, of the form: `decltype ( expression ) `

@@ -1306,6 +1306,18 @@ extern "C" _LIBCPP_FUNC_VIS void __sanitizer_annotate_contiguous_container(
 #define _LIBCPP_HAS_NO_CXX20_COROUTINES
 #endif
 
+#if !defined(__cpp_reflection) || __cpp_reflection < 201902L
+#define _LIBCPP_HAS_NO_REFLECTION
+#else
+#if !defined(__cpp_reflection_ext) || __cpp_reflection_ext < 202111L
+#define _LIBCPP_HAS_NO_REFLECTION_EXT
+#endif
+#endif
+
+#if !defined(__cpp_impl_three_way_comparison) || __cpp_impl_three_way_comparison < 201907L
+#define _LIBCPP_HAS_NO_SPACESHIP_OPERATOR
+#endif
+
 #if defined(_LIBCPP_COMPILER_IBM)
 #define _LIBCPP_HAS_NO_PRAGMA_PUSH_POP_MACRO
 #endif

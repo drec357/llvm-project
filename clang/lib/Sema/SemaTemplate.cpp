@@ -1414,6 +1414,8 @@ QualType Sema::CheckNonTypeTemplateParameterType(QualType T,
   //
   //       -- integral or enumeration type,
   if (T->isIntegralOrEnumerationType() ||
+      //   -- metaobject id type
+      T->isMetaobjectIdType() ||
       //   -- pointer to object or pointer to function,
       T->isPointerType() ||
       //   -- lvalue reference to object or lvalue reference to function,
@@ -3470,6 +3472,37 @@ checkBuiltinTemplateIdType(Sema &SemaRef, BuiltinTemplateDecl *BTD,
                                        TemplateLoc, SyntheticTemplateArgs);
   }
 
+  case BTK__unpack_metaobject_seq: {
+    // Specializations of __unpack_metaobject_seq<MOID> are treated like
+    // S<MOID0, ..., MOIDN>.
+
+    TemplateArgument MoIdArg = Converted[1];
+    llvm::APInt MoId = MoIdArg.getAsMetaobjectId();
+
+    ReflexprIdExpr *REE = ReflexprIdExpr::fromMetaobjectId(Context, MoId);
+    if (!REE) {
+      SourceLocation argLoc = TemplateArgs[1].getLocation(); 
+      SemaRef.Diag(argLoc, diag::err_expected_metaobject_id_expr);
+      return QualType();
+    }
+
+    TemplateArgumentListInfo SyntheticTemplateArgs;
+    std::vector<llvm::APInt> Elems;
+    UnaryMetaobjectOpExpr::unpackSequence(Context, REE, Elems);
+    // Expand MOID into MOID0 ... MOIDN.
+    for (llvm::APInt& Arg : Elems) {
+      TemplateArgument TA(Context, Arg, Context.MetaobjectIdTy);
+      Expr *E = SemaRef.BuildExpressionFromMetaobjectIdTemplateArgument(
+                          TA, TemplateArgs[0].getLocation()).getAs<Expr>();
+      SyntheticTemplateArgs.addArgument(
+          TemplateArgumentLoc(TemplateArgument(E), E));
+    }
+    // The first template argument will be reused as the template decl that
+    // our synthetic template arguments will be applied to.
+    return SemaRef.CheckTemplateIdType(Converted[0].getAsTemplate(),
+                                       TemplateLoc, SyntheticTemplateArgs);
+  }
+
   case BTK__type_pack_element:
     // Specializations of
     //    __type_pack_element<Index, T_1, ..., T_N>
@@ -4101,6 +4134,7 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Null:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
@@ -5439,6 +5473,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
+    case TemplateArgument::MetaobjectId:
     case TemplateArgument::NullPtr:
       // We've already checked this template argument, so just copy
       // it to the list of converted arguments.
@@ -5588,6 +5623,8 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     llvm_unreachable("Declaration argument with template template parameter");
   case TemplateArgument::Integral:
     llvm_unreachable("Integral argument with template template parameter");
+  case TemplateArgument::MetaobjectId:
+    llvm_unreachable("Metaobject id argument with template template parameter");
   case TemplateArgument::NullPtr:
     llvm_unreachable("Null pointer argument with template template parameter");
 
@@ -6058,6 +6095,10 @@ bool UnnamedLocalNoLinkageFinder::VisitTypeOfType(const TypeOfType* T) {
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitDecltypeType(const DecltypeType*) {
+  return false;
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitUnrefltypeType(const UnrefltypeType*) {
   return false;
 }
 
@@ -6967,6 +7008,11 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
       break;
+    case APValue::MetaobjectId:
+      assert(ParamType->isMetaobjectIdType());
+      Converted = TemplateArgument(Context, Value.getMetaobjectId(),
+                                   Context.MetaobjectIdTy);
+      break;
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
 
@@ -7097,6 +7143,25 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                    Context.getCanonicalType(ParamType));
       return ArgResult;
     }
+
+  /// Handle __metaobject_id type
+  if (ParamType->isMetaobjectIdType()) {
+    if (Arg->isValueDependent()) {
+      // The argument is value-dependent. Create a new
+      // TemplateArgument with the converted expression.
+      Converted = TemplateArgument(Arg);
+      return Arg;
+    }
+
+    APValue V;
+    ExprResult ArgResult =
+      CheckConvertedConstantExpression(Arg, ParamType, V, CCEK_TemplateArg);
+    if (ArgResult.isInvalid())
+      return ExprError();
+
+    Converted = TemplateArgument(Context, V.getInt(), Context.MetaobjectIdTy);
+    return Arg;
+  }
 
     ExprResult ArgResult = DefaultLvalueConversion(Arg);
     if (ArgResult.isInvalid())
@@ -7629,6 +7694,22 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
                                Loc, Loc);
   }
 
+  return E;
+}
+
+/// Construct a new expression that refers to the given
+/// metaobject id template argument with the given source-location
+/// information.
+ExprResult
+Sema::BuildExpressionFromMetaobjectIdTemplateArgument(const TemplateArgument &Arg,
+                                                      SourceLocation Loc) {
+  assert(!Arg.isDependent());
+  assert(Arg.getKind() == TemplateArgument::MetaobjectId &&
+         "Operation is only valid for metaobject id template arguments");
+  QualType T = Arg.getMetaobjectIdType();
+
+  assert(T->isMetaobjectIdType());
+  Expr *E = new (Context) MetaobjectIdExpr(Arg.getAsMetaobjectId(), T, Loc);
   return E;
 }
 

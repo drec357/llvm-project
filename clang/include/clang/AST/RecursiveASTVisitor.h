@@ -776,6 +776,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
   case TemplateArgument::Null:
   case TemplateArgument::Declaration:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::NullPtr:
     return true;
 
@@ -809,6 +810,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
   case TemplateArgument::Null:
   case TemplateArgument::Declaration:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::NullPtr:
     return true;
 
@@ -990,6 +992,9 @@ DEF_TRAVERSE_TYPE(TypeOfExprType,
 DEF_TRAVERSE_TYPE(TypeOfType, { TRY_TO(TraverseType(T->getUnderlyingType())); })
 
 DEF_TRAVERSE_TYPE(DecltypeType,
+                  { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
+
+DEF_TRAVERSE_TYPE(UnrefltypeType,
                   { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
 
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
@@ -1264,6 +1269,10 @@ DEF_TRAVERSE_TYPELOC(TypeOfType, {
 
 // FIXME: location of underlying expr
 DEF_TRAVERSE_TYPELOC(DecltypeType, {
+  TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
+})
+
+DEF_TRAVERSE_TYPELOC(UnrefltypeType, {
   TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
 })
 
@@ -2473,6 +2482,25 @@ DEF_TRAVERSE_STMT(OffsetOfExpr, {
   // FIMXE: for code like offsetof(Foo, a.b.c), should we get
   // making a MemberExpr callbacks for Foo.a, Foo.a.b, and Foo.a.b.c?
   TRY_TO(TraverseTypeLoc(S->getTypeSourceInfo()->getTypeLoc()));
+})
+
+DEF_TRAVERSE_STMT(ReflexprIdExpr, {
+  // The child-iterator will pick up the arg if it's an expression,
+  // but not if it's a type.
+  if (S->isArgumentType())
+    TRY_TO(TraverseTypeLoc(S->getArgumentTypeInfo()->getTypeLoc()));
+})
+
+DEF_TRAVERSE_STMT(MetaobjectIdExpr, {
+  // [reflection-ts] FIXME
+})
+
+DEF_TRAVERSE_STMT(UnaryMetaobjectOpExpr, {
+  // [reflection-ts] FIXME
+})
+
+DEF_TRAVERSE_STMT(NaryMetaobjectOpExpr, {
+  // [reflection-ts] FIXME
 })
 
 DEF_TRAVERSE_STMT(UnaryExprOrTypeTraitExpr, {

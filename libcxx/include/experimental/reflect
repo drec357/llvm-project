@@ -1,0 +1,874 @@
+// -*- C++ -*-
+//===--------------------------- reflect ----------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef _LIBCPP_EXPERIMENTAL_REFLECT
+#define _LIBCPP_EXPERIMENTAL_REFLECT
+/*
+   experimental/reflect synopsis
+
+#include <cstdint>
+#include <type_traits>
+
+#define __cpp_lib_reflection 201902
+
+namespace std {
+namespace experimental {
+namespace reflect {
+
+// FIXME
+
+} // namespace reflect
+} // namespace experimental
+} // namespace std
+
+*/
+
+#include <experimental/__config>
+#include <__debug>
+#include <cstdint>
+#include <type_traits>
+
+#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
+#pragma GCC system_header
+#endif
+
+#ifdef _LIBCPP_HAS_NO_REFLECTION
+# if defined(_LIBCPP_WARNING)
+    _LIBCPP_WARNING("<experimental/reflect> cannot be used with this compiler")
+# else
+#   warning <experimental/reflect> cannot be used with this compiler
+# endif
+#endif
+
+#ifndef _LIBCPP_HAS_NO_REFLECTION
+
+#define __cpp_lib_reflection 201902
+
+_LIBCPP_BEGIN_NAMESPACE_EXPERIMENTAL_REFLECT
+
+// the (anonymous) metaobject type.
+template <__metaobject_id _Tp>
+struct __metaobject {};
+
+template <class _Tp,
+          template <__metaobject_id> class _True,
+          typename _False>
+struct __if_metaobject : _False {};
+
+template <class _Tp,
+          template <__metaobject_id> class _True,
+          typename _False>
+constexpr const bool __if_metaobject_v =
+  __if_metaobject<_Tp, _True, _False>::value;
+
+template <__metaobject_id _Tp,
+          template <__metaobject_id> class _True,
+          typename _False>
+struct __if_metaobject<__metaobject<_Tp>, _True, _False>
+  : _True<_Tp> {};
+
+// metaobject id unwrap helper
+template <typename _Tp>
+struct __unwrap_metaobject_id;
+
+template <__metaobject_id _Tp>
+struct __unwrap_metaobject_id<__metaobject<_Tp>>
+{
+  static constexpr const __metaobject_id value = _Tp;
+};
+
+template <typename _Tp>
+constexpr const __metaobject_id __unwrap_metaobject_id_v =
+  __unwrap_metaobject_id<_Tp>::value;
+
+// metaobject concepts
+template <class _Tp,
+          template <__metaobject_id> class _True>
+constexpr const bool __is_a_concept_v =
+  __if_metaobject_v<_Tp, _True, false_type>;
+
+// Object
+template <__metaobject_id _Tp>
+struct __is_Object
+  : integral_constant<bool, __metaobject_is_meta_object(_Tp)> {};
+
+template <class _Tp>
+concept bool Object = __is_a_concept_v<_Tp, __is_Object>;
+
+// ObjectSequence
+template <__metaobject_id _Tp>
+struct __is_ObjectSequence
+  : integral_constant<bool, __metaobject_is_meta_object_sequence(_Tp)> {};
+
+template <class _Tp>
+concept bool ObjectSequence = __is_a_concept_v<_Tp, __is_ObjectSequence>;
+
+// Named
+template <__metaobject_id _Tp>
+struct __is_Named
+  : integral_constant<bool, __metaobject_is_meta_named(_Tp)> {};
+
+template <class _Tp>
+concept bool Named = __is_a_concept_v<_Tp, __is_Named>;
+
+// Alias
+template <__metaobject_id _Tp>
+struct __is_Alias
+  : integral_constant<bool, __metaobject_is_meta_alias(_Tp)> {};
+
+template <class _Tp>
+concept bool Alias = __is_a_concept_v<_Tp, __is_Alias>;
+
+// Scope
+template <__metaobject_id _Tp>
+struct __is_Scope
+  : integral_constant<bool, __metaobject_is_meta_scope(_Tp)> {};
+
+template <class _Tp>
+concept bool Scope = __is_a_concept_v<_Tp, __is_Scope>;
+
+// Typed
+template <__metaobject_id _Tp>
+struct __is_Typed
+  : integral_constant<bool, __metaobject_is_meta_typed(_Tp)> {};
+
+template <class _Tp>
+concept bool Typed = __is_a_concept_v<_Tp, __is_Typed>;
+
+// ScopeMember
+template <__metaobject_id _Tp>
+struct __is_ScopeMember
+  : integral_constant<bool, __metaobject_is_meta_scope_member(_Tp)> {};
+
+template <class _Tp>
+concept bool ScopeMember = __is_a_concept_v<_Tp, __is_ScopeMember>;
+
+// Enumerator
+template <__metaobject_id _Tp>
+struct __is_Enumerator
+  : integral_constant<bool, __metaobject_is_meta_enumerator(_Tp)> {};
+
+template <class _Tp>
+concept bool Enumerator = __is_a_concept_v<_Tp, __is_Enumerator>;
+
+// RecordMember
+template <__metaobject_id _Tp>
+struct __is_RecordMember
+  : integral_constant<bool, __metaobject_is_meta_record_member(_Tp)> {};
+
+template <class _Tp>
+concept bool RecordMember = __is_a_concept_v<_Tp, __is_RecordMember>;
+
+// Base
+template <__metaobject_id _Tp>
+struct __is_Base
+  : integral_constant<bool, __metaobject_is_meta_base(_Tp)> {};
+
+template <class _Tp>
+concept bool Base = __is_a_concept_v<_Tp, __is_Base>;
+
+// Namespace
+template <__metaobject_id _Tp>
+struct __is_Namespace
+  : integral_constant<bool, __metaobject_is_meta_namespace(_Tp)> {};
+
+template <class _Tp>
+concept bool Namespace = __is_a_concept_v<_Tp, __is_Namespace>;
+
+// GlobalScope
+template <__metaobject_id _Tp>
+struct __is_GlobalScope
+  : integral_constant<bool, __metaobject_is_meta_global_scope(_Tp)> {};
+
+template <class _Tp>
+concept bool GlobalScope = __is_a_concept_v<_Tp, __is_GlobalScope>;
+
+// Type
+template <__metaobject_id _Tp>
+struct __is_Type
+  : integral_constant<bool, __metaobject_is_meta_type(_Tp)> {};
+
+template <class _Tp>
+concept bool Type = __is_a_concept_v<_Tp, __is_Type>;
+
+// Enum
+template <__metaobject_id _Tp>
+struct __is_Enum
+  : integral_constant<bool, __metaobject_is_meta_enum(_Tp)> {};
+
+template <class _Tp>
+concept bool Enum = __is_a_concept_v<_Tp, __is_Enum>;
+
+// Record
+template <__metaobject_id _Tp>
+struct __is_Record
+  : integral_constant<bool, __metaobject_is_meta_record(_Tp)> {};
+
+template <class _Tp>
+concept bool Record = __is_a_concept_v<_Tp, __is_Record>;
+
+// Class
+template <__metaobject_id _Tp>
+struct __is_Class
+  : integral_constant<bool, __metaobject_is_meta_class(_Tp)> {};
+
+template <class _Tp>
+concept bool Class = __is_a_concept_v<_Tp, __is_Class>;
+
+// Lambda
+template <__metaobject_id _Tp>
+struct __is_Lambda
+  : integral_constant<bool, __metaobject_is_meta_lambda(_Tp)> {};
+
+template <class _Tp>
+concept bool Lambda = __is_a_concept_v<_Tp, __is_Lambda>;
+
+// Constant
+template <__metaobject_id _Tp>
+struct __is_Constant
+  : integral_constant<bool, __metaobject_is_meta_constant(_Tp)> {};
+
+template <class _Tp>
+concept bool Constant = __is_a_concept_v<_Tp, __is_Constant>;
+
+// Variable
+template <__metaobject_id _Tp>
+struct __is_Variable
+  : integral_constant<bool, __metaobject_is_meta_variable(_Tp)> {};
+
+template <class _Tp>
+concept bool Variable = __is_a_concept_v<_Tp, __is_Variable>;
+
+// LambdaCapture
+template <__metaobject_id _Tp>
+struct __is_LambdaCapture
+  : integral_constant<bool, __metaobject_is_meta_lambda_capture(_Tp)> {};
+
+template <class _Tp>
+concept bool LambdaCapture = __is_a_concept_v<_Tp, __is_LambdaCapture>;
+
+// FunctionParameter
+template <__metaobject_id _Tp>
+struct __is_FunctionParameter
+  : integral_constant<bool, __metaobject_is_meta_function_parameter(_Tp)> {};
+
+template <class _Tp>
+concept bool FunctionParameter = __is_a_concept_v<_Tp, __is_FunctionParameter>;
+
+// Callable
+template <__metaobject_id _Tp>
+struct __is_Callable
+  : integral_constant<bool, __metaobject_is_meta_callable(_Tp)> {};
+
+template <class _Tp>
+concept bool Callable = __is_a_concept_v<_Tp, __is_Callable>;
+
+// Function
+template <__metaobject_id _Tp>
+struct __is_Function
+  : integral_constant<bool, __metaobject_is_meta_function(_Tp)> {};
+
+template <class _Tp>
+concept bool Function = __is_a_concept_v<_Tp, __is_Function>;
+
+// MemberFunction
+template <__metaobject_id _Tp>
+struct __is_MemberFunction
+  : integral_constant<bool, __metaobject_is_meta_member_function(_Tp)> {};
+
+template <class _Tp>
+concept bool MemberFunction = __is_a_concept_v<_Tp, __is_MemberFunction>;
+
+// SpecialMemberFunction
+template <__metaobject_id _Tp>
+struct __is_SpecialMemberFunction
+  : integral_constant<bool, __metaobject_is_meta_special_member_function(_Tp)> {};
+
+template <class _Tp>
+concept bool SpecialMemberFunction = __is_a_concept_v<_Tp, __is_SpecialMemberFunction>;
+
+// Constructor
+template <__metaobject_id _Tp>
+struct __is_Constructor
+  : integral_constant<bool, __metaobject_is_meta_constructor(_Tp)> {};
+
+template <class _Tp>
+concept bool Constructor = __is_a_concept_v<_Tp, __is_Constructor>;
+
+// Destructor
+template <__metaobject_id _Tp>
+struct __is_Destructor
+  : integral_constant<bool, __metaobject_is_meta_destructor(_Tp)> {};
+
+template <class _Tp>
+concept bool Destructor = __is_a_concept_v<_Tp, __is_Destructor>;
+
+// Operator
+template <__metaobject_id _Tp>
+struct __is_Operator
+  : integral_constant<bool, __metaobject_is_meta_operator(_Tp)> {};
+
+template <class _Tp>
+concept bool Operator = __is_a_concept_v<_Tp, __is_Operator>;
+
+// ConversionOperator
+template <__metaobject_id _Tp>
+struct __is_ConversionOperator
+  : integral_constant<bool, __metaobject_is_meta_conversion_operator(_Tp)> {};
+
+template <class _Tp>
+concept bool ConversionOperator = __is_a_concept_v<_Tp, __is_ConversionOperator>;
+
+// Expression
+template <__metaobject_id _Tp>
+struct __is_Expression
+  : integral_constant<bool, __metaobject_is_meta_expression(_Tp)> {};
+
+template <class _Tp>
+concept bool Expression = __is_a_concept_v<_Tp, __is_Expression>;
+
+// ParenthesizedExpression
+template <__metaobject_id _Tp>
+struct __is_ParenthesizedExpression
+  : integral_constant<bool, __metaobject_is_meta_parenthesized_expression(_Tp)> {};
+
+template <class _Tp>
+concept bool ParenthesizedExpression = __is_a_concept_v<_Tp, __is_ParenthesizedExpression>;
+
+// FunctionCallExpression
+template <__metaobject_id _Tp>
+struct __is_FunctionCallExpression
+  : integral_constant<bool, __metaobject_is_meta_function_call_expression(_Tp)> {};
+
+template <class _Tp>
+concept bool FunctionCallExpression = __is_a_concept_v<_Tp, __is_FunctionCallExpression>;
+
+// FunctionalTypeConversion
+template <__metaobject_id _Tp>
+struct __is_FunctionalTypeConversion
+  : integral_constant<bool, __metaobject_is_meta_functional_type_conversion(_Tp)> {};
+
+template <class _Tp>
+concept bool FunctionalTypeConversion = __is_a_concept_v<_Tp, __is_FunctionalTypeConversion>;
+
+// metaobject unary operations
+
+// boolean
+template <Object _Tp>
+requires (Variable<_Tp> || Callable<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_constexpr
+  : integral_constant<bool, __metaobject_is_constexpr(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_constexpr_v = is_constexpr<_Tp>::value;
+
+template <Object _Tp>
+requires (Constructor<_Tp> || ConversionOperator<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_explicit
+  : integral_constant<bool, __metaobject_is_explicit(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_explicit_v = is_explicit<_Tp>::value;
+
+template <Object _Tp>
+requires (Namespace<_Tp> || Callable<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_inline
+  : integral_constant<bool, __metaobject_is_inline(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_inline_v = is_inline<_Tp>::value;
+
+template <Object _Tp>
+requires (Variable<_Tp> || MemberFunction<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_static
+  : integral_constant<bool, __metaobject_is_static(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_static_v = is_static<_Tp>::value;
+
+template <Object _Tp>
+requires (Base<_Tp> || Destructor<_Tp> || MemberFunction<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_virtual
+  : integral_constant<bool, __metaobject_is_virtual(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_virtual_v = is_virtual<_Tp>::value;
+
+template <Object _Tp>
+requires (Destructor<_Tp> || MemberFunction<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_pure_virtual
+  : integral_constant<bool, __metaobject_is_pure_virtual(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_pure_virtual_v = is_pure_virtual<_Tp>::value;
+
+template <Object _Tp>
+requires (Class<_Tp> || MemberFunction<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_final
+  : integral_constant<bool, __metaobject_is_final(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_final_v = is_final<_Tp>::value;
+
+template <Object _Tp>
+requires (RecordMember<_Tp> || Base<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_private
+  : integral_constant<bool, __metaobject_is_private(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_private_v = is_private<_Tp>::value;
+
+template <Object _Tp>
+requires (RecordMember<_Tp> || Base<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_protected
+  : integral_constant<bool, __metaobject_is_protected(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_protected_v = is_protected<_Tp>::value;
+
+template <Object _Tp>
+requires (RecordMember<_Tp> || Base<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS is_public
+  : integral_constant<bool, __metaobject_is_public(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_public_v = is_public<_Tp>::value;
+
+template <Named _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_unnamed
+  : integral_constant<bool, __metaobject_is_unnamed(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Named _Tp>
+inline constexpr auto is_unnamed_v = is_unnamed<_Tp>::value;
+
+template <Type _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_enum
+  : integral_constant<bool, __metaobject_is_enum(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Type _Tp>
+inline constexpr auto is_enum_v = is_enum<_Tp>::value;
+
+template <Enum _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_scoped_enum
+  : integral_constant<bool, __metaobject_is_scoped_enum(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Enum _Tp>
+inline constexpr auto is_scoped_enum_v = is_scoped_enum<_Tp>::value;
+
+template <Type _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_union
+  : integral_constant<bool, __metaobject_is_union(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Type _Tp>
+inline constexpr auto is_union_v = is_union<_Tp>::value;
+
+template <Type _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_class_key
+  : integral_constant<
+    bool,
+    __metaobject_uses_class_key(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Type _Tp>
+inline constexpr auto uses_class_key_v = uses_class_key<_Tp>::value;
+
+template <Type _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_struct_key
+  : integral_constant<
+    bool,
+    __metaobject_uses_struct_key(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Type _Tp>
+inline constexpr auto uses_struct_key_v = uses_struct_key<_Tp>::value;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_default_copy_capture
+  : integral_constant<
+    bool,
+    __metaobject_uses_default_copy_capture(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto uses_default_copy_capture_v = uses_default_copy_capture<_Tp>::value;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS uses_default_reference_capture
+  : integral_constant<
+    bool,
+    __metaobject_uses_default_reference_capture(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto uses_default_reference_capture_v = uses_default_reference_capture<_Tp>::value;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_call_operator_const
+  : integral_constant<
+    bool,
+    __metaobject_is_call_operator_const(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Lambda _Tp>
+inline constexpr auto is_call_operator_const_v = is_call_operator_const<_Tp>::value;
+
+template <MemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_const
+  : integral_constant<bool, __metaobject_is_const(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <MemberFunction _Tp>
+inline constexpr auto is_const_v = is_const<_Tp>::value;
+
+template <MemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_volatile
+  : integral_constant<bool, __metaobject_is_volatile(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <MemberFunction _Tp>
+inline constexpr auto is_volatile_v = is_volatile<_Tp>::value;
+
+template <MemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS has_lvalueref_qualifier
+  : integral_constant<bool, __metaobject_has_lvalueref_qualifier(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <MemberFunction _Tp>
+inline constexpr auto has_lvalueref_qualifier_v = has_lvalueref_qualifier<_Tp>::value;
+
+template <MemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS has_rvalueref_qualifier
+  : integral_constant<bool, __metaobject_has_rvalueref_qualifier(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <MemberFunction _Tp>
+inline constexpr auto has_rvalueref_qualifier_v = has_rvalueref_qualifier<_Tp>::value;
+
+template <Object _T1, Object _T2>
+struct _LIBCPP_TEMPLATE_VIS reflects_same
+  : integral_constant<bool, __metaobject_reflects_same(
+      __unwrap_metaobject_id_v<_T1>, __unwrap_metaobject_id_v<_T2>)> {};
+
+template <Object _T1, Object _T2>
+inline constexpr auto reflects_same_v = reflects_same<_T1, _T2>::value;
+
+// integral
+template <Object _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_source_line
+  : integral_constant<
+    size_t,
+    __metaobject_get_source_line(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto get_source_line_v = get_source_line<_Tp>::value;
+
+template <Object _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_source_column
+  : integral_constant<
+    size_t,
+    __metaobject_get_source_column(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto get_source_column_v = get_source_column<_Tp>::value;
+
+template <Object _Tp>
+requires (Variable<_Tp> || Function<_Tp>)
+struct _LIBCPP_TEMPLATE_VIS get_pointer
+  : integral_constant<
+    __unrefltype(__metaobject_get_pointer(__unwrap_metaobject_id_v<_Tp>)),
+    __metaobject_get_pointer(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto get_pointer_v = get_pointer<_Tp>::value;
+
+template <Constant _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_constant
+  : integral_constant<
+    __unrefltype(__metaobject_get_constant(__unwrap_metaobject_id_v<_Tp>)),
+    __metaobject_get_constant(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Constant _Tp>
+inline constexpr auto get_constant_v = get_constant<_Tp>::value;
+
+template <ObjectSequence _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_size
+  : integral_constant<
+    size_t,
+    __metaobject_get_size(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <ObjectSequence _Tp>
+inline constexpr auto get_size_v = get_size<_Tp>::value;
+
+// string
+template <Object _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_source_file_name {
+  static constexpr const char value[
+    __metaobject_source_file_name_len(__unwrap_metaobject_id_v<_Tp>) + 1
+  ] = __metaobject_get_source_file_name(__unwrap_metaobject_id_v<_Tp>);
+};
+
+template <Object _Tp>
+inline constexpr auto get_source_file_name_v = get_source_file_name<_Tp>::value;
+
+
+template <Named _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_name {
+  static constexpr const char value[
+    __metaobject_name_len(__unwrap_metaobject_id_v<_Tp>) + 1
+  ] = __metaobject_get_name(__unwrap_metaobject_id_v<_Tp>);
+};
+
+template <Named _Tp>
+inline constexpr auto get_name_v = get_name<_Tp>::value;
+
+template <Named _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_display_name {
+  static constexpr const char value[
+    __metaobject_display_name_len(__unwrap_metaobject_id_v<_Tp>) + 1
+  ] = __metaobject_get_display_name(__unwrap_metaobject_id_v<_Tp>);
+};
+
+template <Named _Tp>
+inline constexpr auto get_display_name_v = get_display_name<_Tp>::value;
+
+// metaobject
+template <ScopeMember _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_scope {
+  using type = __metaobject<__metaobject_get_scope(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <ScopeMember _Tp>
+using get_scope_t = typename get_scope<_Tp>::type;
+
+template <Typed _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_type {
+  using type = __metaobject<__metaobject_get_type(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Typed _Tp>
+using get_type_t = typename get_type<_Tp>::type;
+
+template <Enum _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_underlying_type {
+  using type = __metaobject<__metaobject_get_underlying_type(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Enum _Tp>
+using get_underlying_type_t = typename get_underlying_type<_Tp>::type;
+
+template <Alias _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_aliased {
+  using type = __metaobject<__metaobject_get_aliased(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Alias _Tp>
+using get_aliased_t = typename get_aliased<_Tp>::type;
+
+template <Base _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_class {
+  using type = __metaobject<__metaobject_get_class(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Base _Tp>
+using get_class_t = typename get_class<_Tp>::type;
+
+template <Class _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_base_classes {
+  using type = __metaobject<__metaobject_get_base_classes(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Class _Tp>
+using get_base_classes_t = typename get_base_classes<_Tp>::type;
+
+template <Class _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_public_base_classes {
+  using type = __metaobject<__metaobject_get_public_base_classes(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Class _Tp>
+using get_public_base_classes_t = typename get_public_base_classes<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_member_types {
+  using type = __metaobject<__metaobject_get_member_types(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_member_types_t = typename get_member_types<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_public_member_types {
+  using type = __metaobject<__metaobject_get_public_member_types(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_public_member_types_t = typename get_public_member_types<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_data_members {
+  using type = __metaobject<__metaobject_get_data_members(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_data_members_t = typename get_data_members<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_public_data_members {
+  using type = __metaobject<__metaobject_get_public_data_members(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_public_data_members_t = typename get_public_data_members<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_member_functions {
+  using type = __metaobject<__metaobject_get_member_functions(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_member_functions_t = typename get_member_functions<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_public_member_functions {
+  using type = __metaobject<__metaobject_get_public_member_functions(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_public_member_functions_t = typename get_public_member_functions<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_constructors {
+  using type = __metaobject<__metaobject_get_constructors(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_constructors_t = typename get_constructors<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_destructors {
+  using type = __metaobject<__metaobject_get_destructors(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_destructors_t = typename get_destructors<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_destructor {
+  using type = __metaobject<__metaobject_get_destructor(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_destructor_t = typename get_destructor<_Tp>::type;
+
+template <Record _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_operators {
+  using type = __metaobject<__metaobject_get_operators(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Record _Tp>
+using get_operators_t = typename get_operators<_Tp>::type;
+
+template <Enum _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_enumerators {
+  using type = __metaobject<__metaobject_get_enumerators(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Enum _Tp>
+using get_enumerators_t = typename get_enumerators<_Tp>::type;
+
+template <Callable _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_parameters {
+  using type = __metaobject<__metaobject_get_parameters(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Callable _Tp>
+using get_parameters_t = typename get_parameters<_Tp>::type;
+
+template <Lambda _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_captures {
+  using type = __metaobject<__metaobject_get_captures(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <Lambda _Tp>
+using get_captures_t = typename get_captures<_Tp>::type;
+
+// get sequence element
+template <size_t _I, ObjectSequence _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_element {
+  using type = __metaobject<__metaobject_get_element(__unwrap_metaobject_id_v<_Tp>, _I)>;
+};
+
+template <size_t _I, ObjectSequence _Tp>
+using get_element_t = typename get_element<_I, _Tp>::type;
+
+// sequence unpacking
+template <template <class...> class _Tpl, ObjectSequence _Tp>
+struct _LIBCPP_TEMPLATE_VIS unpack_sequence {
+  template <__metaobject_id ... MoIds>
+  struct __unpack_helper {
+    using type = _Tpl<__metaobject<MoIds>...>;
+  };
+
+  using type = typename __unpack_metaobject_seq<
+    __unpack_helper,
+    __unwrap_metaobject_id_v<_Tp>
+  >::type;
+};
+
+template <template <class...> class _Tpl, ObjectSequence _Tp>
+using unpack_sequence_t = typename unpack_sequence<_Tpl, _Tp>::type;
+
+// unreflection
+template <Type _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_reflected_type {
+  using type = __unrefltype(__unwrap_metaobject_id_v<_Tp>);
+};
+
+template <Type _Tp>
+using get_reflected_type_t = typename get_reflected_type<_Tp>::type;
+
+#ifndef _LIBCPP_HAS_NO_REFLECTION_EXT
+
+// extensions
+
+// Specifier
+template <__metaobject_id _Tp>
+struct __is_Specifier
+  : integral_constant<bool, __metaobject_is_meta_specifier(_Tp)> {};
+
+template <class _Tp>
+concept bool Specifier = __is_a_concept_v<_Tp, __is_Specifier>;
+
+// get the metaobject id as an integer
+template <Object _Tp>
+struct _LIBCPP_TEMPLATE_VIS get_id
+  : integral_constant<
+    uintptr_t,
+    __metaobject_get_id_value(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto get_id_v = get_id<_Tp>::value;
+
+template <ObjectSequence _Tp>
+struct _LIBCPP_TEMPLATE_VIS hide_private {
+  using type = __metaobject<__metaobject_hide_private(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <ObjectSequence _Tp>
+using hide_private_t = typename hide_private<_Tp>::type;
+
+template <ObjectSequence _Tp>
+struct _LIBCPP_TEMPLATE_VIS hide_protected {
+  using type = __metaobject<__metaobject_hide_protected(__unwrap_metaobject_id_v<_Tp>)>;
+};
+
+template <ObjectSequence _Tp>
+using hide_protected_t = typename hide_protected<_Tp>::type;
+
+#endif /* !_LIBCPP_HAS_NO_REFLECTION_EXT */
+
+_LIBCPP_END_NAMESPACE_EXPERIMENTAL_REFLECT
+
+// [reflection-ts] FIXME: this will be replaced by parsed expression
+#define reflexpr(...) _VSTD_REFLECT::__metaobject<__reflexpr_id(__VA_ARGS__)>
+
+#endif /* !_LIBCPP_HAS_NO_REFLECTION */
+
+#endif /* _LIBCPP_EXPERIMENTAL_REFLECT */

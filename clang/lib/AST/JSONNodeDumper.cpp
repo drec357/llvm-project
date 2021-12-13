@@ -1538,6 +1538,9 @@ void JSONNodeDumper::VisitNullPtrTemplateArgument(const TemplateArgument &TA) {
 void JSONNodeDumper::VisitIntegralTemplateArgument(const TemplateArgument &TA) {
   JOS.attribute("value", TA.getAsIntegral().getSExtValue());
 }
+void JSONNodeDumper::VisitMetaobjectIdTemplateArgument(const TemplateArgument &TA) {
+  JOS.attribute("value", TA.getAsMetaobjectId().getZExtValue());
+}
 void JSONNodeDumper::VisitTemplateTemplateArgument(const TemplateArgument &TA) {
   // FIXME: cannot just call dump() on the argument, as that doesn't specify
   // the output format.

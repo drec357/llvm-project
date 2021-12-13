@@ -419,6 +419,12 @@ let Class = PropertyTypeCase<APValue, "AddrLabelDiff"> in {
     return APValue(cast<AddrLabelExpr>(lhs), cast<AddrLabelExpr>(rhs));
   }]>;
 }
+let Class = PropertyTypeCase<APValue, "MetaobjectId"> in {
+  def : Property<"value", APInt> {
+    let Read = [{ node.getMetaobjectId() }];
+  }
+  def : Creator<[{ return APValue(value); }]>;
+}
 let Class = PropertyTypeCase<APValue, "MemberPointer"> in {
   def : Property<"isDerived", Bool> {
     let Read = [{ node.isMemberPointerToDerivedMember() }];
@@ -753,6 +759,17 @@ let Class = PropertyTypeCase<TemplateArgument, "Integral"> in {
   }
   def : Property<"type", QualType> {
     let Read = [{ node.getIntegralType() }];
+  }
+  def : Creator<[{
+    return TemplateArgument(ctx, value, type);
+  }]>;
+}
+let Class = PropertyTypeCase<TemplateArgument, "MetaobjectId"> in {
+  def : Property<"value", APInt> {
+    let Read = [{ node.getAsMetaobjectId() }];
+  }
+  def : Property<"type", QualType> {
+    let Read = [{ node.getMetaobjectIdType() }];
   }
   def : Creator<[{
     return TemplateArgument(ctx, value, type);

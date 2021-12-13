@@ -523,6 +523,11 @@ public:
   /// semantically correspond to a bool.
   bool isKnownToHaveBooleanValue(bool Semantic = true) const;
 
+  // [reflection-ts] FIXME document this
+  Optional<llvm::APInt> getMetaobjectIdExpr(void* EvlInfo, const ASTContext &Ctx,
+                                            SourceLocation *Loc = nullptr,
+                                            bool isEvaluated = true) const;
+
   /// isIntegerConstantExpr - Return the value if this expression is a valid
   /// integer constant expression.  If not a valid i-c-e, return None and fill
   /// in Loc (if specified) with the location of the invalid expression.

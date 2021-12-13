@@ -276,6 +276,8 @@ public:
   static const TST TST_fract = clang::TST_Fract;
   static const TST TST_float128 = clang::TST_float128;
   static const TST TST_ibm128 = clang::TST_ibm128;
+  static const TST TST_metaobjectId = clang::TST_metaobjectId;
+  static const TST TST_unrefltype = clang::TST_unrefltype;
   static const TST TST_bool = clang::TST_bool;
   static const TST TST_decimal32 = clang::TST_decimal32;
   static const TST TST_decimal64 = clang::TST_decimal64;
@@ -404,7 +406,8 @@ private:
             T == TST_underlyingType || T == TST_atomic);
   }
   static bool isExprRep(TST T) {
-    return (T == TST_typeofExpr || T == TST_decltype || T == TST_bitint);
+    return (T == TST_typeofExpr || T == TST_decltype ||
+            T == TST_unrefltype || T == TST_bitint);
   }
   static bool isTemplateIdRep(TST T) {
     return (T == TST_auto || T == TST_decltype_auto);

@@ -244,6 +244,15 @@ enum class TemplateSubstitutionKind : char {
     /// Construct an integral non-type template argument that
     /// has been deduced, possibly from an array bound.
     DeducedTemplateArgument(ASTContext &Ctx,
+                            const llvm::APInt &Value,
+                            QualType ValueType,
+                            bool DeducedFromArrayBound)
+        : TemplateArgument(Ctx, Value, ValueType),
+          DeducedFromArrayBound(DeducedFromArrayBound) {}
+
+    /// Construct an integral non-type template argument that
+    /// has been deduced, possibly from an array bound.
+    DeducedTemplateArgument(ASTContext &Ctx,
                             const llvm::APSInt &Value,
                             QualType ValueType,
                             bool DeducedFromArrayBound)

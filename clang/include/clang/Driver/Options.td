@@ -2188,6 +2188,18 @@ def fimplicit_module_maps : Flag <["-"], "fimplicit-module-maps">, Group<f_Group
 def fmodules_ts : Flag <["-"], "fmodules-ts">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Enable support for the C++ Modules TS">,
   MarshallingInfoFlag<LangOpts<"ModulesTS">>;
+
+// [reflection-ts]
+defm reflection_ts : BoolFOption<"reflection-ts",
+  LangOpts<"ReflectionTS">, DefaultFalse,
+  PosFlag<SetTrue, [CC1Option], "Enable support for the C++ Reflection TS">,
+  NegFlag<SetFalse>>;
+
+defm reflection_ext : BoolFOption<"reflection-ext",
+  LangOpts<"ReflectionExt">, DefaultFalse,
+  PosFlag<SetTrue, [CC1Option], "Enable support for C++ Reflection extensions">,
+  NegFlag<SetFalse>>;
+
 defm modules : BoolFOption<"modules",
   LangOpts<"Modules">, Default<!strconcat(fmodules_ts.KeyPath, "||", fcxx_modules.KeyPath)>,
   PosFlag<SetTrue, [CC1Option], "Enable the 'modules' language feature">,

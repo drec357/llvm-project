@@ -3529,6 +3529,7 @@ enum CXTemplateArgumentKind {
   CXTemplateArgumentKind_Declaration,
   CXTemplateArgumentKind_NullPtr,
   CXTemplateArgumentKind_Integral,
+  CXTemplateArgumentKind_MetaobjectId,
   CXTemplateArgumentKind_Template,
   CXTemplateArgumentKind_TemplateExpansion,
   CXTemplateArgumentKind_Expression,

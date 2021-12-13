@@ -386,6 +386,7 @@ TypeSpecifierType BuiltinTypeLoc::getWrittenTypeSpec() const {
   case BuiltinType::SatUFract:
   case BuiltinType::SatULongFract:
   case BuiltinType::BFloat16:
+  case BuiltinType::MetaobjectId:
     llvm_unreachable("Builtin type needs extra local data!");
     // Fall through, if the impossible happens.
 
@@ -572,6 +573,7 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
       llvm_unreachable("Impossible TemplateArgument");
 
     case TemplateArgument::Integral:
+    case TemplateArgument::MetaobjectId:
     case TemplateArgument::Declaration:
     case TemplateArgument::NullPtr:
       ArgInfos[i] = TemplateArgumentLocInfo();

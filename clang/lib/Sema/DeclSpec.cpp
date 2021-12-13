@@ -371,6 +371,7 @@ bool Declarator::isDeclarationOfFunction() const {
     case TST_union:
     case TST_unknown_anytype:
     case TST_unspecified:
+    case TST_metaobjectId:
     case TST_void:
     case TST_wchar:
     case TST_BFloat16:
@@ -384,6 +385,7 @@ bool Declarator::isDeclarationOfFunction() const {
       return false;
 
     case TST_decltype:
+    case TST_unrefltype:
     case TST_typeofExpr:
       if (Expr *E = DS.getRepAsExpr())
         return E->getType()->isFunctionType();
@@ -574,6 +576,8 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T,
   case DeclSpec::TST_typeofExpr:  return "typeof";
   case DeclSpec::TST_auto:        return "auto";
   case DeclSpec::TST_auto_type:   return "__auto_type";
+  case DeclSpec::TST_metaobjectId:return "__metaobject_id";
+  case DeclSpec::TST_unrefltype: return "__unrefltype";
   case DeclSpec::TST_decltype:    return "(decltype)";
   case DeclSpec::TST_decltype_auto: return "decltype(auto)";
   case DeclSpec::TST_underlyingType: return "__underlying_type";

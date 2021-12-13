@@ -3288,6 +3288,7 @@ static bool TypeInfoIsInStandardLibrary(const BuiltinType *Ty) {
     case BuiltinType::Char32:
     case BuiltinType::Int128:
     case BuiltinType::UInt128:
+    case BuiltinType::MetaobjectId:
       return true;
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
@@ -4217,7 +4218,7 @@ void ItaniumCXXABI::EmitFundamentalRTTIDescriptors(const CXXRecordDecl *RD) {
       getContext().FloatTy,            getContext().DoubleTy,
       getContext().LongDoubleTy,       getContext().Float128Ty,
       getContext().Char8Ty,            getContext().Char16Ty,
-      getContext().Char32Ty
+      getContext().Char32Ty,           getContext().MetaobjectIdTy
   };
   llvm::GlobalValue::DLLStorageClassTypes DLLStorageClass =
       RD->hasAttr<DLLExportAttr>()

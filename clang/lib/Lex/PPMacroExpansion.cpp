@@ -1663,6 +1663,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
           return llvm::StringSwitch<bool>(II->getName())
               // Report builtin templates as being builtins.
               .Case("__make_integer_seq", getLangOpts().CPlusPlus)
+              .Case("__unpack_metaobject_seq", LangOpts.CPlusPlus && LangOpts.ReflectionTS)
               .Case("__type_pack_element", getLangOpts().CPlusPlus)
               // Likewise for some builtin preprocessor macros.
               // FIXME: This is inconsistent; we usually suggest detecting

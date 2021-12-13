@@ -1129,6 +1129,97 @@ void Parser::AnnotateExistingDecltypeSpecifier(const DeclSpec& DS,
   PP.AnnotateCachedTokens(Tok);
 }
 
+void Parser::AnnotateExistingUnrefltypeSpecifier(const DeclSpec &DS,
+                                                 SourceLocation StartLoc,
+                                                 SourceLocation EndLoc) {
+  // make sure we have a token we can turn into an annotation token
+  if (PP.isBacktrackEnabled()) {
+    PP.RevertCachedTokens(1);
+    if (DS.getTypeSpecType() == TST_error) {
+      EndLoc = PP.getLastCachedTokenLocation();
+    }
+  }
+  else
+    PP.EnterToken(Tok, /*IsReinject*/true);
+
+  Tok.setKind(tok::annot___unrefltype);
+  setExprAnnotation(Tok, DS.getTypeSpecType() == TST_unrefltype
+                             ? DS.getRepAsExpr()
+                             : ExprError());
+  Tok.setAnnotationEndLoc(EndLoc);
+  Tok.setLocation(StartLoc);
+  PP.AnnotateCachedTokens(Tok);
+}
+
+SourceLocation Parser::ParseUnrefltypeSpecifier(DeclSpec &DS) {
+  assert(Tok.isOneOf(tok::kw___unrefltype, tok::annot___unrefltype) &&
+         "Not a unrefltype specifier");
+
+  SourceLocation OpLoc = Tok.getLocation();
+  SourceLocation EndLoc;
+  ExprResult Result;
+
+  if (Tok.is(tok::annot___unrefltype)) {
+    Result = getExprAnnotation(Tok);
+    EndLoc = Tok.getAnnotationEndLoc();
+    ConsumeAnnotationToken();
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return EndLoc;
+    }
+  } else {
+    Token OpTok = Tok;
+    ConsumeToken(); // eat __unrefltype
+
+    EnterExpressionEvaluationContext Unevaluated(
+      Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated, nullptr,
+      Sema::ExpressionEvaluationContextRecord::EK_Unrefltype);
+
+    BalancedDelimiterTracker Parens(*this, tok::l_paren);
+    if (Parens.expectAndConsume(diag::err_expected_lparen_after,
+                                OpTok.getName())) {
+      DS.SetTypeSpecError();
+      return OpLoc;
+    }
+
+    // The argument must be a __metaobject_id expression
+    Result = ParseCastExpression(AnyCastExpr);
+
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return Parens.getOpenLocation();
+    }
+
+    Result = Actions.ActOnUnrefltypeExpression(Result.get(), OpLoc);
+
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
+      return Parens.getOpenLocation();
+    }
+
+    Parens.consumeClose();
+    EndLoc = Parens.getCloseLocation();
+    if (EndLoc.isInvalid()) {
+      DS.SetTypeSpecError();
+      // FIXME: this should return the location of the last token
+      //        that was consumed (by "consumeClose()")
+      return EndLoc;
+    }
+  }
+  assert(!Result.isInvalid());
+
+  const char *PrevSpec = nullptr;
+  unsigned DiagID;
+  const PrintingPolicy &Policy = Actions.getASTContext().getPrintingPolicy();
+  if (DS.SetTypeSpecType(DeclSpec::TST_unrefltype, OpLoc, PrevSpec, DiagID,
+                         Result.get(), Policy)) {
+    Diag(OpLoc, DiagID) << PrevSpec;
+    DS.SetTypeSpecError();
+  }
+
+  return EndLoc;
+}
+
 void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
   assert(Tok.is(tok::kw___underlying_type) &&
          "Not an underlying type specifier");
@@ -1332,6 +1423,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::annot_cxxscope:     // struct foo {...} a::       b;
   case tok::annot_typename:     // struct foo {...} a         ::b;
   case tok::annot_template_id:  // struct foo {...} a<int>    ::b;
+  case tok::kw_reflexpr:        // struct foo {...} reflexpr  (a)::b;
   case tok::kw_decltype:        // struct foo {...} decltype  (a)::b;
   case tok::l_paren:            // struct foo {...} (         x);
   case tok::comma:              // __builtin_offsetof(struct foo{...} ,
@@ -3697,6 +3789,9 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     // ParseOptionalCXXScopeSpecifier at this point.
     // FIXME: Can we get here with a scope specifier?
     ParseDecltypeSpecifier(DS);
+  } else if (Tok.is(tok::annot___unrefltype)) {
+    // Get the __unrefltype expression, if there is one.
+    ParseUnrefltypeSpecifier(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
                                            ? takeTemplateIdAnnotation(Tok)

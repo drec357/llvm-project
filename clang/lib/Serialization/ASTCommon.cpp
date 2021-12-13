@@ -53,6 +53,9 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
   case BuiltinType::UInt128:
     ID = PREDEF_TYPE_UINT128_ID;
     break;
+  case BuiltinType::MetaobjectId:
+    ID = PREDEF_TYPE_METAOBJECT_ID_ID;
+    break;
   case BuiltinType::Char_S:
     ID = PREDEF_TYPE_CHAR_S_ID;
     break;

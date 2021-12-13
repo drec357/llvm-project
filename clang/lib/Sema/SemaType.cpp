@@ -1553,6 +1553,9 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_type_unsupported) << "__ibm128";
     Result = Context.Ibm128Ty;
     break;
+  case DeclSpec::TST_metaobjectId:
+    Result = Context.MetaobjectIdTy;
+    break;
   case DeclSpec::TST_bool:
     Result = Context.BoolTy; // _Bool or bool
     break;
@@ -1633,6 +1636,17 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     assert(E && "Didn't get an expression for decltype?");
     // TypeQuals handled by caller.
     Result = S.BuildDecltypeType(E);
+    if (Result.isNull()) {
+      Result = Context.IntTy;
+      declarator.setInvalidType(true);
+    }
+    break;
+  }
+  case DeclSpec::TST_unrefltype: {
+    Expr *E = DS.getRepAsExpr();
+    assert(E && "Didn't get an expression for unrefltype?");
+    // TypeQuals handled by caller.
+    Result = S.BuildUnrefltypeType(E, DS.getTypeSpecTypeLoc());
     if (Result.isNull()) {
       Result = Context.IntTy;
       declarator.setInvalidType(true);
@@ -9032,6 +9046,54 @@ QualType Sema::BuildDecltypeType(Expr *E, bool AsUnevaluated) {
     Diag(E->getExprLoc(), diag::warn_side_effects_unevaluated_context);
   }
   return Context.getDecltypeType(E, getDecltypeForExpr(E));
+}
+
+static QualType getUnrefltypeForExpr(Sema &S, Expr *E, SourceLocation Loc) {
+  if (E->isValueDependent())
+    return S.Context.DependentTy;
+
+  if (ReflexprIdExpr *REE = ReflexprIdExpr::fromExpr(S.Context, E)) {
+    QualType result;
+    if (REE->reflectsType()) {
+      result = REE->getReflectedType();
+    }
+    if (result.isNull()) {
+      S.Diag(Loc, diag::err_unrefltype_operator_not_applicable_to_metaobject)
+        << REE->getMetaobjectKindName();
+    }
+    return result;
+  }
+
+  if (UnaryMetaobjectOpExpr *UMOE = dyn_cast<UnaryMetaobjectOpExpr>(E)) {
+    QualType result = UMOE->getType();
+    if (result.isNull()) {
+      S.Diag(Loc, diag::err_unrefltype_operator_not_applicable_to_operation)
+        << UMOE->getOperationSpelling();
+    }
+    return result;
+  }
+  llvm_unreachable("unable to get type for unreflexpr");
+}
+
+QualType Sema::BuildUnrefltypeType(Expr *E, SourceLocation Loc,
+                                   bool AsUnevaluated) {
+  ExprResult ER = CheckPlaceholderExpr(E);
+  if (ER.isInvalid()) return QualType();
+  E = ER.get();
+
+  if (AsUnevaluated && CodeSynthesisContexts.empty() &&
+      E->HasSideEffects(Context, false)) {
+    // The expression operand for decltype is in an unevaluated expression
+    // context, so side effects could result in unintended consequences.
+    Diag(E->getExprLoc(), diag::warn_side_effects_unevaluated_context);
+  }
+
+  QualType URTTy = Context.getUnrefltypeType(E,
+                 getUnrefltypeForExpr(*this, E, Loc));
+  if (Context.getTargetInfo().getCXXABI().isMicrosoft()) {
+    (void)isCompleteType(Loc, URTTy);
+  }
+  return URTTy;
 }
 
 QualType Sema::BuildUnaryTransformType(QualType BaseType,

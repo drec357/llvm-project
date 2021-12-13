@@ -8897,3 +8897,210 @@ Sema::ActOnRequiresExpr(SourceLocation RequiresKWLoc,
     return ExprError();
   return RE;
 }
+
+ExprResult Sema::OptionallyWrapReflexprExpr(bool idOnly, ExprResult E) {
+  // [reflection-ts] FIXME wrap the expression into
+  // std::experimental::reflect::__metaobject if not idOnly
+  if (!idOnly) {
+  }
+  return E;
+}
+
+ExprResult Sema::GetReflexprNoExpr(SourceLocation opLoc,
+                                   SourceLocation endLoc) {
+  return ReflexprIdExpr::getEmptyReflexprIdExpr(Context, opLoc, endLoc);
+}
+
+ExprResult Sema::GetReflexprGlobalScopeExpr(SourceLocation opLoc,
+                                            SourceLocation endLoc) {
+  return ReflexprIdExpr::getGlobalScopeReflexprIdExpr(Context, opLoc, endLoc);
+}
+
+/// ActOnUnaryExprOrTypeTraitExpr - Handle reflexpr() expression
+ExprResult Sema::ActOnReflexprNoExpr(bool idOnly,
+                                     SourceLocation opLoc,
+                                     SourceRange argRange) {
+  return OptionallyWrapReflexprExpr(
+      idOnly, GetReflexprNoExpr(opLoc, argRange.getEnd()));
+}
+
+/// ActOnUnaryExprOrTypeTraitExpr - Handle reflexpr(::) expression
+ExprResult Sema::ActOnReflexprGlobalScopeExpr(bool idOnly,
+                                              SourceLocation opLoc,
+                                              SourceRange argRange) {
+  return OptionallyWrapReflexprExpr(
+      idOnly, GetReflexprGlobalScopeExpr(opLoc, argRange.getEnd()));
+}
+
+ExprResult Sema::GetReflexprSpecExpr(tok::TokenKind specTok,
+                                     SourceLocation opLoc,
+                                     SourceLocation endLoc) {
+  return ReflexprIdExpr::getSpecifierReflexprIdExpr(Context, specTok,
+                                                    opLoc, endLoc);
+}
+
+/// ActOnUnaryExprOrTypeTraitExpr - Handle reflexpr(specifier) expression
+ExprResult Sema::ActOnReflexprSpecExpr(bool idOnly, tok::TokenKind specTok,
+                                       SourceLocation opLoc,
+                                       SourceRange argRange) {
+  return OptionallyWrapReflexprExpr(
+      idOnly, GetReflexprSpecExpr(specTok, opLoc, argRange.getEnd()));
+}
+
+ExprResult Sema::GetReflexprNamedDeclExpr(const NamedDecl *nDecl,
+                                          SourceLocation opLoc,
+                                          SourceLocation endLoc) {
+  return ReflexprIdExpr::getNamedDeclReflexprIdExpr(Context, nDecl,
+                                                    opLoc, endLoc);
+}
+
+/// ActOnUnaryExprOrTypeTraitExpr - Handle reflexpr(name) expression
+ExprResult Sema::ActOnReflexprScopedExpr(bool idOnly, Scope *S,
+                                         CXXScopeSpec &SS,
+                                         const IdentifierInfo &Ident,
+                                         SourceLocation opLoc,
+                                         SourceRange argRange) {
+  LookupResult R(*this, &Ident, argRange.getBegin(), LookupOrdinaryName);
+  LookupParsedName(R, S, &SS);
+
+  if (!R.empty() && !R.isAmbiguous()) {
+    if (const NamedDecl *nDecl = R.getFoundDecl()) {
+      if (!isa<TemplateTypeParmDecl>(nDecl) && !isa<TemplateDecl>(nDecl) &&
+          !isa<FunctionDecl>(nDecl)) {
+        return OptionallyWrapReflexprExpr(
+            idOnly, GetReflexprNamedDeclExpr(nDecl, opLoc, argRange.getEnd()));
+      }
+    }
+  }
+  return ExprError();
+}
+
+ExprResult Sema::GetReflexprTypeExpr(const TypeSourceInfo *TInfo,
+                                     bool removeSugar, SourceLocation opLoc,
+                                     SourceLocation endLoc) {
+  return ReflexprIdExpr::getTypeReflexprIdExpr(Context, TInfo, removeSugar,
+                                               opLoc, endLoc);
+}
+
+ExprResult Sema::GetReflexprTypeExpr(QualType Ty, bool removeSugar,
+                                     SourceLocation opLoc,
+                                     SourceLocation endLoc) {
+  return ReflexprIdExpr::getTypeReflexprIdExpr(Context, Ty, removeSugar,
+                                               opLoc, endLoc);
+}
+
+ExprResult Sema::ActOnReflexprTypeExpr(bool idOnly, Scope *S, Declarator &D,
+                                       SourceLocation opLoc,
+                                       SourceRange argRange) {
+  assert(D.getIdentifier() == nullptr &&
+         "Type name should have no identifier!");
+
+  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
+  return OptionallyWrapReflexprExpr(
+      idOnly, GetReflexprTypeExpr(TInfo, true, opLoc, argRange.getEnd()));
+}
+
+ExprResult Sema::CreateUnaryMetaobjectOpExpr(UnaryMetaobjectOp Oper,
+                                             MetaobjectOpResult OpRes,
+                                             ExprResult argExpr,
+                                             SourceLocation opLoc,
+                                             SourceLocation endLoc) {
+  Expr *ArgExpr = argExpr.get();
+
+  bool doChecks = !ArgExpr->isInstantiationDependent();
+
+  if (doChecks) {
+    if (auto *REE = UnaryMetaobjectOpExpr::getReflexprIdExpr(Context, ArgExpr)) {
+      if (!UnaryMetaobjectOpExpr::isOperationApplicable(Context, REE, Oper)) {
+        Diag(opLoc, diag::err_metaobject_operation_not_applicable)
+            << UnaryMetaobjectOpExpr::getOperationSpelling(Oper)
+            << REE->getMetaobjectKindName();
+
+        return ExprError();
+      }
+    }
+  }
+
+  return UnaryMetaobjectOpExpr::Create(Context, Oper, OpRes,
+                                       ArgExpr, opLoc, endLoc);
+}
+
+ExprResult Sema::CreateNaryMetaobjectOpExpr(NaryMetaobjectOp Oper,
+                                            MetaobjectOpResult OpRes,
+                                            unsigned Arity, ExprResult *argExpr,
+                                            SourceLocation opLoc,
+                                            SourceLocation endLoc) {
+
+  Expr *ArgExpr[NaryMetaobjectOpExpr::MaxArity];
+  for (unsigned i = 0; i < Arity; ++i) {
+  }
+  for (unsigned i = 0; i < Arity; ++i) {
+    assert(argExpr[i].isUsable());
+    ArgExpr[i] = argExpr[i].get();
+
+    bool doChecks = !ArgExpr[i]->isInstantiationDependent();
+
+    if (doChecks) {
+      if (ReflexprIdExpr *REE =
+          NaryMetaobjectOpExpr::getReflexprIdExpr(Context, ArgExpr[i])) {
+        if (!NaryMetaobjectOpExpr::isOperationApplicable(Context, REE, Oper)) {
+          Diag(opLoc, diag::err_metaobject_operation_not_applicable)
+              << NaryMetaobjectOpExpr::getOperationSpelling(Oper)
+              << ReflexprIdExpr::getMetaobjectKindName(Context, REE);
+
+          return ExprError();
+        }
+      } else if (i == 0) {
+        Diag(opLoc, diag::err_expected_metaobject_id_expr);
+        return ExprError();
+      }
+    }
+  }
+
+  return NaryMetaobjectOpExpr::Create(Context, Oper, OpRes,
+                                      Arity, ArgExpr, opLoc, endLoc);
+}
+
+ExprResult Sema::ActOnUnaryMetaobjectOpExpr(UnaryMetaobjectOp Oper,
+                                            MetaobjectOpResult OpRes,
+                                            ExprResult argExpr,
+                                            SourceLocation opLoc,
+                                            SourceLocation endLoc) {
+
+  return CreateUnaryMetaobjectOpExpr(Oper, OpRes, argExpr, opLoc, endLoc);
+}
+
+ExprResult Sema::ActOnNaryMetaobjectOpExpr(NaryMetaobjectOp Oper,
+                                           MetaobjectOpResult OpRes,
+                                           unsigned Arity, ExprResult *argExpr,
+                                           SourceLocation opLoc,
+                                           SourceLocation endLoc) {
+
+  return CreateNaryMetaobjectOpExpr(Oper, OpRes, Arity, argExpr, opLoc, endLoc);
+}
+
+ExprResult Sema::ActOnUnrefltypeExpression(Expr *E, SourceLocation opLoc) {
+  assert(ExprEvalContexts.back().ExprContext ==
+             ExpressionEvaluationContextRecord::EK_Unrefltype &&
+         "not in a __unrefltype expression");
+
+  if (!E->isInstantiationDependent()) {
+    if (const auto *REE = ReflexprIdExpr::fromExpr(Context, E)) {
+      if (!REE->reflectsType()) {
+        Diag(opLoc, diag::err_unrefltype_operator_not_applicable_to_metaobject)
+            << REE->getMetaobjectKindName();
+        return ExprError();
+      }
+    } else if (const auto *UMOE = dyn_cast<UnaryMetaobjectOpExpr>(E)) {
+      if (!UMOE->hasOpResultType()) {
+        Diag(opLoc, diag::err_unrefltype_operator_not_applicable_to_metaobject)
+            << REE->getMetaobjectKindName();
+        return ExprError();
+      }
+    } else {
+      Diag(opLoc, diag::err_expected_metaobject_id_expr);
+      return ExprError();
+    }
+  }
+  return E;
+}

@@ -848,7 +848,8 @@ public:
     return Tok.is(tok::identifier) || Tok.is(tok::coloncolon) ||
            (Tok.is(tok::annot_template_id) &&
             NextToken().is(tok::coloncolon)) ||
-           Tok.is(tok::kw_decltype) || Tok.is(tok::kw___super);
+           Tok.is(tok::kw_decltype) || Tok.is(tok::kw___unrefltype) ||
+           Tok.is(tok::kw___super);
   }
   bool TryAnnotateOptionalCXXScopeToken(bool EnteringContext = false) {
     return MightBeCXXScopeToken() && TryAnnotateCXXScopeToken(EnteringContext);
@@ -2930,10 +2931,15 @@ private:
                             SourceLocation ScopeLoc, ParsedAttr::Syntax Syntax);
 
   void ParseTypeofSpecifier(DeclSpec &DS);
+
   SourceLocation ParseDecltypeSpecifier(DeclSpec &DS);
   void AnnotateExistingDecltypeSpecifier(const DeclSpec &DS,
                                          SourceLocation StartLoc,
                                          SourceLocation EndLoc);
+  SourceLocation ParseUnrefltypeSpecifier(DeclSpec &DS);
+  void AnnotateExistingUnrefltypeSpecifier(const DeclSpec &DS,
+                                           SourceLocation StartLoc,
+                                           SourceLocation EndLoc);
   void ParseUnderlyingTypeSpecifier(DeclSpec &DS);
   void ParseAtomicSpecifier(DeclSpec &DS);
 
@@ -3495,6 +3501,16 @@ private:
       SourceLocation UseLoc,
       SmallVectorImpl<std::pair<IdentifierInfo *, SourceLocation>> &Path,
       bool IsImport);
+
+  //===--------------------------------------------------------------------===//
+  // ReflectionTS: reflexpr or __reflexpr_id expression
+  ExprResult ParseReflexprExpression(bool IdOnly);
+  ExprResult ParseMetaobjectOpExpression();
+  ExprResult ParseUnaryMetaobjectOpExpression(Token OpTok,
+                                              SourceLocation OpLoc);
+  ExprResult ParseNaryMetaobjectOpExpression(Token OpTok,
+                                             SourceLocation OpLoc,
+                                             unsigned Arity);
 
   //===--------------------------------------------------------------------===//
   // C++11/G++: Type Traits [Type-Traits.html in the GCC manual]

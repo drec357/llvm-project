@@ -414,7 +414,9 @@ set(files
   experimental/list
   experimental/map
   experimental/memory_resource
+  experimental/mirror
   experimental/propagate_const
+  experimental/reflect
   experimental/regex
   experimental/set
   experimental/simd

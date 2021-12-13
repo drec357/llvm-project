@@ -1481,6 +1481,7 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
   switch (TAL.getArgument().getKind()) {
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::Pack:
     return false;
 
@@ -1533,6 +1534,7 @@ bool CursorVisitor::VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
   switch (TL.getTypePtr()->getKind()) {
 
   case BuiltinType::Void:
+  case BuiltinType::MetaobjectId:
   case BuiltinType::NullPtr:
   case BuiltinType::Dependent:
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix)                   \
@@ -1773,6 +1775,13 @@ bool CursorVisitor::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
 }
 
 bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
+  if (Expr *E = TL.getUnderlyingExpr())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
+bool CursorVisitor::VisitUnrefltypeTypeLoc(UnrefltypeTypeLoc TL) {
   if (Expr *E = TL.getUnderlyingExpr())
     return Visit(MakeCXCursor(E, StmtParent, TU));
 

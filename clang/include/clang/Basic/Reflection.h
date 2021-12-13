@@ -1,0 +1,285 @@
+//===--- Metaobjects.h - C++ ReflectionTS Support Enumerations --*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// \brief Defines enumerations for the metaobject support.
+///
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_CLANG_BASIC_REFLECTION_H
+#define LLVM_CLANG_BASIC_REFLECTION_H
+
+namespace clang {
+
+  // [reflection-ts] FIXME This needs to be fixed to match the TS wording
+  // When updating this also update METAOBJECT_TRAIT in TokenKinds.def
+  enum MetaobjectConcept  {
+    MOC_Nothing                     = 0,
+    MOC_Object                      = (1UL <<  0U),
+    MOC_ObjectSequence              = (1UL <<  1U) | MOC_Object,
+    MOC_Named                       = (1UL <<  2U) | MOC_Object,
+    MOC_Typed                       = (1UL <<  3U) | MOC_Object,
+    MOC_Scope                       = (1UL <<  4U) | MOC_Object,
+    MOC_Base                        = (1UL <<  5U) | MOC_Object,
+    MOC_Template                    = (1UL <<  6U) | MOC_Object,
+    MOC_Expression                  = (1UL <<  7U) | MOC_Object,
+    MOC_ScopeMember                 = (1UL <<  8U) | MOC_Named,
+    MOC_Constant                    = (1UL <<  9U) | MOC_Typed,
+    MOC_Variable                    = (1UL << 10U) | MOC_Typed | MOC_ScopeMember,
+    MOC_Enumerator                  = (1UL << 11U) | MOC_ScopeMember | MOC_Constant,
+    MOC_RecordMember                = (1UL << 12U) | MOC_ScopeMember,
+    MOC_Alias                       = (1UL << 13U) | MOC_Named,
+    MOC_FunctionParameter           = (1UL << 14U) | MOC_Typed | MOC_ScopeMember,
+    MOC_Namespace                   = (1UL << 15U) | MOC_Scope,
+    MOC_GlobalScope                 = (1UL << 16U) | MOC_Named | MOC_Namespace,
+    MOC_TemplateParameterScope      = (1UL << 17U) | MOC_Scope,
+    MOC_Type                        = (1UL << 18U) | MOC_Named,
+    MOC_TemplateTypeParameter       = (1UL << 19U) | MOC_Type | MOC_Alias,
+    MOC_TagType                     = (1UL << 20U) | MOC_Type | MOC_Scope | MOC_ScopeMember,
+    MOC_Enum                        = (1UL << 21U) | MOC_TagType,
+    MOC_Record                      = (1UL << 22U) | MOC_TagType,
+    MOC_Class                       = (1UL << 23U) | MOC_Record,
+    MOC_Callable                    = (1UL << 24U) | MOC_Scope | MOC_ScopeMember,
+    MOC_Function                    = (1UL << 25U) | MOC_Typed | MOC_Callable,
+    MOC_MemberFunction              = (1UL << 26U) | MOC_RecordMember | MOC_Function,
+    MOC_SpecialMemberFunction       = (1UL << 27U) | MOC_RecordMember,
+    MOC_Constructor                 = (1UL << 28U) | MOC_Callable | MOC_RecordMember,
+    MOC_Destructor                  = (1UL << 29U) | MOC_Callable | MOC_SpecialMemberFunction,
+    MOC_Operator                    = (1UL << 30U) | MOC_Function,
+    MOC_ConversionOperator          = (1UL << 31U) | MOC_RecordMember | MOC_Operator,
+    MOC_Lambda                      = (1UL << 32U) | MOC_Type | MOC_Scope,
+    MOC_LambdaCapture               = (1UL << 33U) | MOC_Variable,
+    MOC_ParenthesizedExpression     = (1UL << 34U) | MOC_Expression,
+    MOC_FunctionCallExpression      = (1UL << 35U) | MOC_Expression,
+    MOC_FunctionalTypeConversion    = (1UL << 36U) | MOC_Expression,
+    MOC_Specifier                   = (1UL << 37U) | MOC_Named,
+    MOC_NamespaceScope              = MOC_Namespace | MOC_ScopeMember,
+    MOC_NamespaceAlias              = MOC_Namespace | MOC_Alias,
+    MOC_TypeAlias                   = MOC_Type | MOC_Alias | MOC_ScopeMember,
+    MOC_EnumAlias                   = MOC_Enum | MOC_Alias,
+    MOC_TemplateEnumTypeParameter   = MOC_TemplateTypeParameter | MOC_Enum,
+    MOC_RecordAlias                 = MOC_Record | MOC_Alias,
+    MOC_LambdaAlias                 = MOC_Lambda | MOC_Alias,
+    MOC_ClassAlias                  = MOC_Class | MOC_Alias,
+    MOC_TemplateClass               = MOC_Class | MOC_TemplateParameterScope,
+    MOC_NamedFunction               = MOC_Named | MOC_Function,
+    MOC_TemplateFunction            = MOC_Function | MOC_TemplateParameterScope,
+    MOC_NamedTemplateFunction       = MOC_NamedFunction | MOC_TemplateParameterScope,
+    MOC_ScopedType                  = MOC_ScopeMember | MOC_Type,
+    MOC_DataMember                  = MOC_RecordMember | MOC_Variable,
+    MOC_MemberType                  = MOC_RecordMember | MOC_Type,
+    MOC_MemberTypeAlias             = MOC_RecordMember | MOC_TypeAlias,
+    MOC_MemberRecord                = MOC_RecordMember | MOC_Record,
+    MOC_MemberRecordAlias           = MOC_RecordMember | MOC_RecordAlias,
+    MOC_MemberLambda                = MOC_RecordMember | MOC_Lambda,
+    MOC_MemberLambdaAlias           = MOC_RecordMember | MOC_LambdaAlias,
+    MOC_MemberClass                 = MOC_RecordMember | MOC_Class,
+    MOC_MemberClassAlias            = MOC_RecordMember | MOC_ClassAlias,
+    MOC_MemberEnum                  = MOC_RecordMember | MOC_Enum,
+    MOC_MemberEnumAlias             = MOC_RecordMember | MOC_EnumAlias,
+    MOC_MemberOperator              = MOC_MemberFunction | MOC_Operator
+  };
+
+  // When updating this also update ReflexprIdExprBitfields
+  enum MetaobjectKind {
+    MOK_Nothing = 0,
+    MOK_Object,
+    MOK_ObjectSequence,
+    MOK_Base,
+    MOK_Specifier,
+    MOK_NamespaceScope,
+    MOK_GlobalScope,
+    MOK_TemplateParameterScope,
+    MOK_Type,
+    MOK_TemplateTypeParameter,
+    MOK_TemplateEnumTypeParameter,
+    MOK_Enum,
+    MOK_Record,
+    MOK_Class,
+    MOK_Lambda,
+    MOK_Function,
+    MOK_Constructor,
+    MOK_Destructor,
+    MOK_Operator,
+    MOK_ConversionOperator,
+    MOK_NamedFunction,
+    MOK_NamespaceAlias,
+    MOK_TypeAlias,
+    MOK_EnumAlias,
+    MOK_RecordAlias,
+    MOK_LambdaAlias,
+    MOK_ClassAlias,
+    MOK_TemplateClass,
+    MOK_Variable,
+    MOK_LambdaCapture,
+    MOK_FunctionParameter,
+    MOK_ScopedType,
+    MOK_DataMember,
+    MOK_MemberType,
+    MOK_MemberTypeAlias,
+    MOK_MemberRecord,
+    MOK_MemberRecordAlias,
+    MOK_MemberLambda,
+    MOK_MemberLambdaAlias,
+    MOK_MemberClass,
+    MOK_MemberClassAlias,
+    MOK_MemberEnum,
+    MOK_MemberEnumAlias,
+    MOK_MemberFunction,
+    MOK_MemberOperator,
+    MOK_Enumerator
+  };
+
+  enum MetaobjectSequenceKind {
+    MOSK_None = 0,
+    MOSK_Enumerators,
+    MOSK_DataMembers,
+    MOSK_MemberTypes,
+    MOSK_MemberFunctions,
+    MOSK_Constructors,
+    MOSK_Destructors,
+    MOSK_Operators,
+    MOSK_BaseClasses,
+    MOSK_Parameters,
+    MOSK_Captures,
+    MOSK_All
+  };
+
+  enum MetaobjectAccessibility {
+    MOA_OnlyPublic = 0,
+    MOA_ContextDependent,
+    MOA_AllowProtected,
+    MOA_AllowPrivate
+  };
+
+  // When updating this also update UnaryMetaobjectOpExprBitfields
+  /// \brief Names for unary metaobject operations
+  enum UnaryMetaobjectOp {
+    UMOO_GetIdValue = 0,
+    UMOO_IsMetaObject,
+    UMOO_IsMetaObjectSequence,
+    UMOO_IsMetaNamed,
+    UMOO_IsMetaTyped,
+    UMOO_IsMetaScope,
+    UMOO_IsMetaScopeMember,
+    UMOO_IsMetaBase,
+    UMOO_IsMetaTemplate,
+    UMOO_IsMetaEnumerator,
+    UMOO_IsMetaRecordMember,
+    UMOO_IsMetaAlias,
+    UMOO_IsMetaConstant,
+    UMOO_IsMetaVariable,
+    UMOO_IsMetaLambdaCapture,
+    UMOO_IsMetaFunctionParameter,
+    UMOO_IsMetaNamespace,
+    UMOO_IsMetaGlobalScope,
+    UMOO_IsMetaTemplateParameterScope,
+    UMOO_IsMetaType,
+    UMOO_IsMetaTagType,
+    UMOO_IsMetaEnum,
+    UMOO_IsMetaRecord,
+    UMOO_IsMetaClass,
+    UMOO_IsMetaLambda,
+    UMOO_IsMetaCallable,
+    UMOO_IsMetaFunction,
+    UMOO_IsMetaMemberFunction,
+    UMOO_IsMetaSpecialMemberFunction,
+    UMOO_IsMetaConstructor,
+    UMOO_IsMetaDestructor,
+    UMOO_IsMetaOperator,
+    UMOO_IsMetaConversionOperator,
+    UMOO_IsMetaExpression,
+    UMOO_IsMetaParenthesizedExpression,
+    UMOO_IsMetaFunctionCallExpression,
+    UMOO_IsMetaFunctionalTypeConversion,
+    UMOO_IsMetaSpecifier,
+    UMOO_SourceFileNameLen,
+    UMOO_GetSourceFileName,
+    UMOO_GetSourceLine,
+    UMOO_GetSourceColumn,
+    UMOO_IsUnnamed,
+    UMOO_NameLen,
+    UMOO_GetName,
+    UMOO_DisplayNameLen,
+    UMOO_GetDisplayName,
+    UMOO_IsScopedEnum,
+    UMOO_GetScope,
+    UMOO_GetType,
+    UMOO_GetUnderlyingType,
+    UMOO_GetAliased,
+    UMOO_GetTagSpecifier,
+    UMOO_IsEnum,
+    UMOO_IsUnion,
+    UMOO_UsesClassKey,
+    UMOO_UsesStructKey,
+    UMOO_UsesDefaultCopyCapture,
+    UMOO_UsesDefaultReferenceCapture,
+    UMOO_IsCallOperatorConst,
+    UMOO_GetEnumerators,
+    UMOO_GetPublicBaseClasses,
+    UMOO_GetMemberTypes,
+    UMOO_GetPublicMemberTypes,
+    UMOO_GetDataMembers,
+    UMOO_GetPublicDataMembers,
+    UMOO_GetMemberFunctions,
+    UMOO_GetPublicMemberFunctions,
+    UMOO_GetConstructors,
+    UMOO_GetDestructors,
+    UMOO_GetDestructor,
+    UMOO_GetOperators,
+    UMOO_GetBaseClasses,
+    UMOO_GetParameters,
+    UMOO_GetCaptures,
+    UMOO_GetClass,
+    UMOO_GetAccessSpecifier,
+    UMOO_IsConstexpr,
+    UMOO_IsExplicit,
+    UMOO_IsInline,
+    UMOO_IsPublic,
+    UMOO_IsProtected,
+    UMOO_IsPrivate,
+    UMOO_IsStatic,
+    UMOO_IsVirtual,
+    UMOO_IsPureVirtual,
+    UMOO_IsFinal,
+    UMOO_IsConst,
+    UMOO_IsVolatile,
+    UMOO_HasLValueRefQualifier,
+    UMOO_HasRValueRefQualifier,
+    UMOO_IsImplicitlyDeclared,
+    UMOO_IsDefaulted,
+    UMOO_HideProtected,
+    UMOO_HidePrivate,
+    UMOO_GetPointer,
+    UMOO_GetConstant,
+    UMOO_IsEmpty,
+    UMOO_GetSize
+  };
+
+  // When updating this also update NaryMetaobjectOpExprBitfields
+  /// \brief Names for n-ary metaobject operations
+  enum NaryMetaobjectOp {
+    NMOO_ReflectsSame,
+    NMOO_GetElement
+  };
+
+  // When updating this also update MetaobjectOpExprBitfields
+  /// \brief Names for metaobject operation results
+  enum MetaobjectOpResult {
+    MOOR_SizeT = 0,
+    MOOR_ULong,
+    MOOR_Bool,
+    MOOR_Constant,
+    MOOR_String,
+    MOOR_Pointer,
+    MOOR_Metaobject
+  };
+}
+
+#endif

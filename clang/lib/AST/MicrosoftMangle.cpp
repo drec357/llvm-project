@@ -370,6 +370,7 @@ public:
   void mangleVirtualMemPtrThunk(const CXXMethodDecl *MD,
                                 const MethodVFTableLocation &ML);
   void mangleNumber(int64_t Number);
+  void mangleNumber(llvm::APInt Number);
   void mangleNumber(llvm::APSInt Number);
   void mangleFloat(llvm::APFloat Number);
   void mangleBits(llvm::APInt Number);
@@ -440,6 +441,9 @@ private:
   void mangleIntegerLiteral(const llvm::APSInt &Number,
                             const NonTypeTemplateParmDecl *PD = nullptr,
                             QualType TemplateArgType = QualType());
+  void mangleMetaobjectId(const llvm::APInt &Number,
+                          const NonTypeTemplateParmDecl *PD = nullptr,
+                          QualType TemplateArgType = QualType());
   void mangleExpression(const Expr *E, const NonTypeTemplateParmDecl *PD);
   void mangleThrowSpecification(const FunctionProtoType *T);
 
@@ -799,6 +803,18 @@ void MicrosoftCXXNameMangler::mangleName(GlobalDecl GD) {
 
 void MicrosoftCXXNameMangler::mangleNumber(int64_t Number) {
   mangleNumber(llvm::APSInt(llvm::APInt(64, Number), /*IsUnsigned*/false));
+}
+
+void MicrosoftCXXNameMangler::mangleNumber(llvm::APInt Number) {
+
+  // <non-negative integer> ::= A@              # when Number == 0
+  //                        ::= <decimal digit> # when 1 <= Number <= 10
+  //                        ::= <hex digit>+ @  # when Number >= 10
+  //
+  // <number>               ::= [?] <non-negative integer>
+
+  // [reflection-ts] FIXME
+  mangleBits(Number);
 }
 
 void MicrosoftCXXNameMangler::mangleNumber(llvm::APSInt Number) {
@@ -1500,6 +1516,27 @@ void MicrosoftCXXNameMangler::mangleIntegerLiteral(
   mangleNumber(Value);
 }
 
+void MicrosoftCXXNameMangler::mangleMetaobjectId(
+    const llvm::APInt &Value, const NonTypeTemplateParmDecl *PD,
+    QualType TemplateArgType) {
+  // <integer-literal> ::= $0 <number>
+  Out << "$";
+
+  // Since MSVC 2019, add 'M[<type>]' after '$' for auto template parameter when
+  // argument is integer.
+  if (getASTContext().getLangOpts().isCompatibleWithMSVC(
+          LangOptions::MSVC2019) &&
+      PD && PD->getType()->getTypeClass() == Type::Auto &&
+      !TemplateArgType.isNull()) {
+    Out << "M";
+    mangleType(TemplateArgType, SourceRange(), QMM_Drop);
+  }
+
+  Out << "0";
+
+  mangleNumber(Value);
+}
+
 void MicrosoftCXXNameMangler::mangleExpression(
     const Expr *E, const NonTypeTemplateParmDecl *PD) {
   // See if this is a constant expression.
@@ -1614,6 +1651,13 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
                          cast<NonTypeTemplateParmDecl>(Parm), T);
     break;
   }
+  case TemplateArgument::MetaobjectId: {
+    // [reflection-ts] FIXME
+    QualType T = TA.getMetaobjectIdType();
+    mangleMetaobjectId(TA.getAsMetaobjectId(),
+                       cast<NonTypeTemplateParmDecl>(Parm), T);
+    break;
+  }
   case TemplateArgument::NullPtr: {
     QualType T = TA.getNullPtrType();
     if (const MemberPointerType *MPT = T->getAs<MemberPointerType>()) {
@@ -1691,6 +1735,7 @@ void MicrosoftCXXNameMangler::mangleTemplateArgValue(QualType T,
   switch (V.getKind()) {
   case APValue::None:
   case APValue::Indeterminate:
+  case APValue::MetaobjectId:
     // FIXME: MSVC doesn't allow this, so we can't be sure how it should be
     // mangled.
     if (WithScalarType)
@@ -2362,6 +2407,9 @@ void MicrosoftCXXNameMangler::mangleType(const BuiltinType *T, Qualifiers,
     break;
   case BuiltinType::ULong:
     Out << 'K';
+    break;
+  case BuiltinType::MetaobjectId:
+    Out << "_Mo";
     break;
   case BuiltinType::Float:
     Out << 'M';
@@ -3276,6 +3324,15 @@ void MicrosoftCXXNameMangler::mangleType(const DecltypeType *T, Qualifiers,
   DiagnosticsEngine &Diags = Context.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
     "cannot mangle this decltype() yet");
+  Diags.Report(Range.getBegin(), DiagID)
+    << Range;
+}
+
+void MicrosoftCXXNameMangler::mangleType(const UnrefltypeType *T, Qualifiers,
+                                         SourceRange Range) {
+  DiagnosticsEngine &Diags = Context.getDiags();
+  unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+    "cannot mangle this __unrefltype() yet");
   Diags.Report(Range.getBegin(), DiagID)
     << Range;
 }

@@ -628,6 +628,12 @@ static void InitializeCPlusPlusFeatureTestMacros(const LangOptions &LangOpts,
   // TS features.
   if (LangOpts.Coroutines)
     Builder.defineMacro("__cpp_coroutines", "201703L");
+
+  if (LangOpts.ReflectionTS)
+    Builder.defineMacro("__cpp_reflection", "201902L");
+
+  if (LangOpts.ReflectionExt)
+    Builder.defineMacro("__cpp_reflection_ext", "202111L");
 }
 
 /// InitializeOpenCLFeatureTestMacros - Define OpenCL macros based on target

@@ -110,6 +110,15 @@ namespace clang {
 using namespace clang;
 using namespace sema;
 
+/// Compare two APInts, extending and switching the sign as
+/// necessary to compare their values regardless of underlying type.
+static bool hasSameExtendedValue(llvm::APInt X, llvm::APInt Y) {
+  assert(Y.getBitWidth() == X.getBitWidth());
+
+  return X == Y;
+}
+
+
 /// Compare two APSInts, extending and switching the sign as
 /// necessary to compare their values regardless of underlying type.
 static bool hasSameExtendedValue(llvm::APSInt X, llvm::APSInt Y) {
@@ -262,6 +271,13 @@ checkDeducedTemplateArguments(ASTContext &Context,
     // All other combinations are incompatible.
     return DeducedTemplateArgument();
 
+  case TemplateArgument::MetaobjectId:
+    // [reflection-ts] FIXME
+    if (hasSameExtendedValue(X.getAsMetaobjectId(), Y.getAsMetaobjectId()))
+      return X;
+
+    return DeducedTemplateArgument();
+
   case TemplateArgument::Template:
     if (Y.getKind() == TemplateArgument::Template &&
         Context.hasSameTemplateName(X.getAsTemplate(), Y.getAsTemplate()))
@@ -309,6 +325,10 @@ checkDeducedTemplateArguments(ASTContext &Context,
       if (Y.wasDeducedFromArrayBound())
         return TemplateArgument(Context, Y.getAsIntegral(),
                                 X.getParamTypeForDecl());
+      return Y;
+    }
+
+    if (Y.getKind() == TemplateArgument::MetaobjectId) {
       return Y;
     }
 
@@ -418,6 +438,20 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
       S, TemplateParams, ParamType, ValueType, Info, Deduced,
       TDF_SkipNonDependent, /*PartialOrdering=*/false,
       /*ArrayBound=*/NewDeduced.wasDeducedFromArrayBound());
+}
+
+/// Deduce the value of the given non-type template parameter
+/// from the given integral constant.
+static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
+    Sema &S, TemplateParameterList *TemplateParams,
+    const NonTypeTemplateParmDecl *NTTP, const llvm::APInt &Value,
+    QualType ValueType, bool DeducedFromArrayBound, TemplateDeductionInfo &Info,
+    SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+  return DeduceNonTypeTemplateArgument(
+      S, TemplateParams, NTTP,
+      DeducedTemplateArgument(S.Context, Value, ValueType,
+                              DeducedFromArrayBound),
+      ValueType, Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -2178,6 +2212,7 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsByTypeMatch(
     case Type::DependentName:
     case Type::UnresolvedUsing:
     case Type::Decltype:
+    case Type::Unrefltype:
     case Type::UnaryTransform:
     case Type::DeducedTemplateSpecialization:
     case Type::DependentTemplateSpecialization:
@@ -2251,12 +2286,26 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     Info.SecondArg = A;
     return Sema::TDK_NonDeducedMismatch;
 
+  case TemplateArgument::MetaobjectId:
+    // [reflection-ts] FIXME
+    if (A.getKind() == TemplateArgument::MetaobjectId) {
+      if (hasSameExtendedValue(P.getAsMetaobjectId(), A.getAsMetaobjectId()))
+        return Sema::TDK_Success;
+    }
+    Info.FirstArg = P;
+    Info.SecondArg = A;
+    return Sema::TDK_NonDeducedMismatch;
+
   case TemplateArgument::Expression:
     if (const NonTypeTemplateParmDecl *NTTP =
             getDeducedParameterFromExpr(Info, P.getAsExpr())) {
       if (A.getKind() == TemplateArgument::Integral)
         return DeduceNonTypeTemplateArgument(
             S, TemplateParams, NTTP, A.getAsIntegral(), A.getIntegralType(),
+            /*ArrayBound=*/false, Info, Deduced);
+      if (A.getKind() == TemplateArgument::MetaobjectId)
+        return DeduceNonTypeTemplateArgument(
+            S, TemplateParams, NTTP, A.getAsMetaobjectId(), A.getMetaobjectIdType(),
             /*ArrayBound=*/false, Info, Deduced);
       if (A.getKind() == TemplateArgument::NullPtr)
         return DeduceNullPtrTemplateArgument(S, TemplateParams, NTTP,
@@ -2455,6 +2504,9 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
+    case TemplateArgument::MetaobjectId:
+      return hasSameExtendedValue(X.getAsMetaobjectId(), Y.getAsMetaobjectId());
+
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
       X.getAsExpr()->Profile(XID, Context, true);
@@ -2523,6 +2575,12 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
   case TemplateArgument::Integral: {
     Expr *E =
         BuildExpressionFromIntegralTemplateArgument(Arg, Loc).getAs<Expr>();
+    return TemplateArgumentLoc(TemplateArgument(E), E);
+  }
+
+  case TemplateArgument::MetaobjectId: {
+    Expr *E =
+        BuildExpressionFromMetaobjectIdTemplateArgument(Arg, Loc).getAs<Expr>();
     return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
@@ -5930,6 +5988,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                  OnlyDeduced, Depth, Used);
     break;
 
+  case Type::Unrefltype:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(Ctx,
+                                 cast<UnrefltypeType>(T)->getUnderlyingExpr(),
+                                 OnlyDeduced, Depth, Used);
+    break;
+
   case Type::UnaryTransform:
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(Ctx,
@@ -5987,6 +6052,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   switch (TemplateArg.getKind()) {
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
+  case TemplateArgument::MetaobjectId:
   case TemplateArgument::Declaration:
     break;
 

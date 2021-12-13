@@ -1974,6 +1974,8 @@ public:
   bool isIntegerType() const;     // C99 6.2.5p17 (int, char, bool, enum)
   bool isEnumeralType() const;
 
+  bool isMetaobjectIdType() const;
+
   /// Determine whether this type is a scoped enumeration type.
   bool isScopedEnumeralType() const;
   bool isBooleanType() const;
@@ -4518,6 +4520,48 @@ class DependentDecltypeType : public DecltypeType, public llvm::FoldingSetNode {
 
 public:
   DependentDecltypeType(const ASTContext &Context, Expr *E);
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Context, getUnderlyingExpr());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      Expr *E);
+};
+
+/// Represents the type `__unrefltype(expr)` (Reflection).
+class UnrefltypeType : public Type {
+  Expr *E;
+  QualType UnderlyingType;
+
+protected:
+  UnrefltypeType(Expr *E, QualType underlyingType, QualType can = QualType());
+  friend class ASTContext;  // ASTContext creates these.
+public:
+  Expr *getUnderlyingExpr() const { return E; }
+  QualType getUnderlyingType() const { return UnderlyingType; }
+
+  /// \brief Remove a single level of sugar.
+  QualType desugar() const;
+
+  /// \brief Returns whether this type directly provides sugar.
+  bool isSugared() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Unrefltype; }
+};
+
+/// \brief Internal representation of canonical, dependent
+/// __unrefltype(expr) types.
+///
+/// This class is used internally by the ASTContext to manage
+/// canonical, dependent types, only. Clients will only see instances
+/// of this class via UnrefltypeType nodes.
+class DependentUnrefltypeType : public UnrefltypeType
+                              , public llvm::FoldingSetNode {
+  const ASTContext &Context;
+
+public:
+  DependentUnrefltypeType(const ASTContext &Context, Expr *E);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, Context, getUnderlyingExpr());

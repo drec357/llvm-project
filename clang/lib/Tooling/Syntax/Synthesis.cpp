@@ -173,6 +173,8 @@ syntax::Tree *allocateTree(syntax::Arena &A, syntax::NodeKind Kind) {
     return new (A.getAllocator()) syntax::MemberPointer;
   case syntax::NodeKind::GlobalNameSpecifier:
     return new (A.getAllocator()) syntax::GlobalNameSpecifier;
+  case syntax::NodeKind::ReflexprNameSpecifier:
+    return new (A.getAllocator()) syntax::ReflexprNameSpecifier;
   case syntax::NodeKind::DecltypeNameSpecifier:
     return new (A.getAllocator()) syntax::DecltypeNameSpecifier;
   case syntax::NodeKind::IdentifierNameSpecifier:

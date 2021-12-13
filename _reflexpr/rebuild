@@ -1,0 +1,24 @@
+#!/bin/bash
+SRC_DIR=$(realpath "$(dirname ${0})")
+ROOT_DIR=$(dirname "${SRC_DIR}")
+PREFIX=${1:-/opt/llvm/install}
+BLD_DIR=${2:-/opt/llvm/build}
+CMPL_JOBS=${3:-$(grep -c -e 'processor\s\+:\s\+[0-9]\+' < /proc/cpuinfo)}
+LINK_JOBS=${4:-$(grep MemTotal /proc/meminfo | awk '{printf "%.0f",  $2/(1024*1024*6)}')}
+mkdir -p "${BLD_DIR}" && \
+pushd "${BLD_DIR}" && \
+cmake \
+        -G Ninja \
+        -DLLVM_ENABLE_PROJECTS="clang;libc;libcxx;libcxxabi" \
+        -DLLVM_USE_LINKER=lld \
+        -DLLVM_USE_SPLIT_DWARF=ON \
+        -DCMAKE_INSTALL_PREFIX=${PREFIX} \
+        -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld -pthread" \
+        -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld -pthread" \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DLLVM_PARALLEL_LINK_JOBS=${LINK_JOBS} \
+        -DLLVM_PARALLEL_COMPILE_JOBS=${CMPL_JOBS} \
+        ${ROOT_DIR}/llvm && \
+ninja install && \
+popd
+

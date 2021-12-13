@@ -252,6 +252,9 @@ enum BuiltinTemplateKind : int {
   /// This names the __make_integer_seq BuiltinTemplateDecl.
   BTK__make_integer_seq,
 
+  /// This names the __unpack_metaobject_seq BuiltinTemplateDecl.
+  BTK__unpack_metaobject_seq,
+
   /// This names the __type_pack_element BuiltinTemplateDecl.
   BTK__type_pack_element
 };

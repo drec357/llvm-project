@@ -912,6 +912,9 @@ bool Sema::LookupBuiltin(LookupResult &R) {
         if (II == getASTContext().getMakeIntegerSeqName()) {
           R.addDecl(getASTContext().getMakeIntegerSeqDecl());
           return true;
+        } else if (II == getASTContext().getUnpackMetaobjectSeqName()) {
+          R.addDecl(getASTContext().getUnpackMetaobjectSeqDecl());
+          return true;
         } else if (II == getASTContext().getTypePackElementName()) {
           R.addDecl(getASTContext().getTypePackElementDecl());
           return true;
@@ -2698,6 +2701,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
+    case TemplateArgument::MetaobjectId:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:
       // [Note: non-type template arguments do not contribute to the set of

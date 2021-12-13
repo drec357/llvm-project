@@ -195,6 +195,11 @@ UNSIGNED_TYPE(SatUFract, SatUnsignedFractTy)
 // '_Sat unsigned long _Fract'
 UNSIGNED_TYPE(SatULongFract, SatUnsignedLongFractTy)
 
+//===- Metaobject id type -------------------------------------------------===//
+
+// This is the type used to represent metaobjects
+BUILTIN_TYPE(MetaobjectId, MetaobjectIdTy)
+
 //===- Floating point types -----------------------------------------------===//
 
 // 'half' in OpenCL, '__fp16' in ARM NEON.

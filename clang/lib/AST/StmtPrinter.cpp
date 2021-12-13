@@ -1296,6 +1296,39 @@ void StmtPrinter::VisitOffsetOfExpr(OffsetOfExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitReflexprIdExpr(ReflexprIdExpr *Node) {
+  OS << "__reflexpr_id";
+  OS << "(";
+  // [reflection-ts] FIXME
+  OS << ")";
+}
+
+void StmtPrinter::VisitMetaobjectIdExpr(MetaobjectIdExpr *Node) {
+  OS << "__metaobject_id(";
+  OS << Node->getValue();
+  OS << ')';
+}
+
+void StmtPrinter::VisitUnaryMetaobjectOpExpr(UnaryMetaobjectOpExpr *Node){
+  // [reflection-ts] FIXME
+  OS << "__metaobj_";
+  OS << Node->getOperationSpelling();
+  OS << '(';
+  PrintExpr(Node->getArgumentExpr());
+  OS << ')';
+}
+void StmtPrinter::VisitNaryMetaobjectOpExpr(NaryMetaobjectOpExpr *Node){
+  // [reflection-ts] FIXME
+  OS << "__metaobj_";
+  OS << '(';
+  PrintExpr(Node->getArgumentExpr(0));
+  for (unsigned i=1; i<Node->getArity(); ++i) {
+    OS << ", ";
+    PrintExpr(Node->getArgumentExpr(i));
+  }
+  OS << ')';
+}
+
 void StmtPrinter::VisitUnaryExprOrTypeTraitExpr(
     UnaryExprOrTypeTraitExpr *Node) {
   const char *Spelling = getTraitSpelling(Node->getKind());

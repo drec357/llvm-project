@@ -1225,6 +1225,14 @@ ASTContext::getMakeIntegerSeqDecl() const {
 }
 
 BuiltinTemplateDecl *
+ASTContext::getUnpackMetaobjectSeqDecl() const {
+  if (!UnpackMetaobjectSeqDecl)
+    UnpackMetaobjectSeqDecl = buildBuiltinTemplateDecl(BTK__unpack_metaobject_seq,
+                                                       getUnpackMetaobjectSeqName());
+  return UnpackMetaobjectSeqDecl;
+}
+
+BuiltinTemplateDecl *
 ASTContext::getTypePackElementDecl() const {
   if (!TypePackElementDecl)
     TypePackElementDecl = buildBuiltinTemplateDecl(BTK__type_pack_element,
@@ -1481,6 +1489,9 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target,
   // nullptr type (C++0x 2.14.7)
   InitBuiltinType(NullPtrTy,           BuiltinType::NullPtr);
 
+  // __metaobject_id type
+  InitBuiltinType(MetaobjectIdTy,      BuiltinType::MetaobjectId);
+
   // half type (OpenCL 6.1.1.1) / ARM NEON __fp16
   InitBuiltinType(HalfTy, BuiltinType::Half);
 
@@ -1692,6 +1703,61 @@ void ASTContext::addedLocalImportDecl(ImportDecl *Import) {
 
   LastLocalImport->setNextLocalImport(Import);
   LastLocalImport = Import;
+}
+
+//===----------------------------------------------------------------------===//
+//                                Reflection
+//===----------------------------------------------------------------------===//
+
+llvm::APInt ASTContext::encodeMetaobject(const ReflexprIdExpr* REE) {
+  return llvm::APInt(sizeof(REE) * 8, reinterpret_cast<uintptr_t>(REE));
+}
+
+ReflexprIdExpr* ASTContext::decodeMetaobject(const llvm::APInt& MoId) {
+  return reinterpret_cast<ReflexprIdExpr*>(MoId.getZExtValue());
+}
+
+ReflexprIdExpr* ASTContext::cacheEmptyReflexpr(ReflexprIdExpr *E) {
+  assert(!EmptyReflexpr);
+  return EmptyReflexpr = E;
+}
+
+ReflexprIdExpr* ASTContext::cacheGlobalScopeReflexpr(ReflexprIdExpr *E) {
+  assert(!GlobalScopeReflexpr);
+  return GlobalScopeReflexpr = E;
+}
+
+ReflexprIdExpr* ASTContext::cacheSpecifierReflexpr(tok::TokenKind K,
+                                                   ReflexprIdExpr* E) {
+  std::pair<unsigned, ReflexprIdExpr *> P(static_cast<unsigned>(K), E);
+  bool FirstOne = SpecifierReflexprs.insert(P).second;
+  assert(FirstOne);
+  (void)FirstOne;
+  return E;
+}
+
+ReflexprIdExpr* ASTContext::findSpecifierReflexpr(tok::TokenKind K) const {
+  SpecifierReflexprMap::const_iterator p =
+      SpecifierReflexprs.find(static_cast<unsigned>(K));
+  if (p != SpecifierReflexprs.end())
+    return p->second;
+  return nullptr;
+}
+
+ReflexprIdExpr* ASTContext::cacheNamedDeclReflexpr(const NamedDecl* ND,
+                                                   ReflexprIdExpr* E) {
+  std::pair<const NamedDecl*, ReflexprIdExpr*> P(ND, E);
+  bool FirstOne = NamedDeclReflexprs.insert(P).second;
+  assert(FirstOne);
+  (void)FirstOne;
+  return E;
+}
+
+ReflexprIdExpr* ASTContext::findNamedDeclReflexpr(const NamedDecl* ND) const {
+  NamedDeclReflexprMap::const_iterator p = NamedDeclReflexprs.find(ND);
+  if (p != NamedDeclReflexprs.end())
+    return p->second;
+  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2071,6 +2137,11 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
     case BuiltinType::UInt128:
       Width = 128;
       Align = 128; // int128_t is 128-bit aligned on all targets.
+      break;
+    case BuiltinType::MetaobjectId:
+      // [reflection-ts] FIXME
+      Width = 64;
+      Align = 64;
       break;
     case BuiltinType::ShortAccum:
     case BuiltinType::UShortAccum:
@@ -3559,6 +3630,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Unrefltype:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -5561,6 +5633,32 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
   return QualType(dt, 0);
 }
 
+// [reflection-ts] FIXME doc
+QualType ASTContext::getUnrefltypeType(Expr *e, QualType UnderlyingType) const {
+  UnrefltypeType *dt;
+
+  if (e->isInstantiationDependent()) {
+    llvm::FoldingSetNodeID ID;
+    DependentUnrefltypeType::Profile(ID, *this, e);
+
+    void *InsertPos = nullptr;
+    DependentUnrefltypeType *Canon =
+        DependentUnrefltypeTypes.FindNodeOrInsertPos(ID, InsertPos);
+    if (!Canon) {
+      // Build a new, canonical __unrefltype(expr) type.
+      Canon = new (*this, TypeAlignment) DependentUnrefltypeType(*this, e);
+      DependentUnrefltypeTypes.InsertNode(Canon, InsertPos);
+    }
+    dt = new (*this, TypeAlignment)
+        UnrefltypeType(e, UnderlyingType, QualType((UnrefltypeType *)Canon, 0));
+  } else {
+    dt = new (*this, TypeAlignment)
+        UnrefltypeType(e, UnderlyingType, getCanonicalType(UnderlyingType));
+  }
+  Types.push_back(dt);
+  return QualType(dt, 0);
+}
+
 /// getUnaryTransformationType - We don't unique these, since the memory
 /// savings are minimal and these are rare.
 QualType ASTContext::getUnaryTransformType(QualType BaseType,
@@ -6115,6 +6213,9 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::Null:
       return Arg;
 
+    case TemplateArgument::MetaobjectId:
+      return Arg;
+
     case TemplateArgument::Expression:
       return Arg;
 
@@ -6471,6 +6572,8 @@ unsigned ASTContext::getIntegerRank(const Type *T) const {
   case BuiltinType::Int128:
   case BuiltinType::UInt128:
     return 7 + (getIntWidth(Int128Ty) << 3);
+  case BuiltinType::MetaobjectId:
+    return 8 + (getIntWidth(MetaobjectIdTy) << 3);
   }
 }
 
@@ -7412,6 +7515,7 @@ static char getObjCEncodingForPrimitiveType(const ASTContext *C,
     case BuiltinType::SatUShortFract:
     case BuiltinType::SatUFract:
     case BuiltinType::SatULongFract:
+    case BuiltinType::MetaobjectId:
       // FIXME: potentially need @encodes for these!
       return ' ';
 

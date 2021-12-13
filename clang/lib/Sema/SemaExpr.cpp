@@ -4443,6 +4443,9 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::Decltype:
       T = cast<DecltypeType>(Ty)->desugar();
       break;
+    case Type::Unrefltype:
+      T = cast<UnrefltypeType>(Ty)->desugar();
+      break;
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
       T = cast<DeducedType>(Ty)->getDeducedType();
@@ -19018,6 +19021,15 @@ bool Sema::CheckCallReturnType(QualType ReturnType, SourceLocation Loc,
   if (ExprEvalContexts.back().ExprContext ==
       ExpressionEvaluationContextRecord::EK_Decltype) {
     ExprEvalContexts.back().DelayedDecltypeCalls.push_back(CE);
+    return false;
+  }
+
+  // If we're inside a __unrefltrype's expression, don't check for a valid return
+  // type or construct temporaries until we know whether this is the last call.
+  if (ExprEvalContexts.back().ExprContext ==
+      ExpressionEvaluationContextRecord::EK_Unrefltype) {
+    // [reflection-ts] FIXME: do we need DelayedUnrefltypeCalls?
+    //ExprEvalContexts.back().DelayedUnrefltypeCalls.push_back(CE);
     return false;
   }
 

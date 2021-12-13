@@ -11,6 +11,8 @@
 // RUN: %clang_cc1 -std=c++14 -fcoroutines-ts -DNO_EXCEPTIONS -DCOROUTINES -verify -fsized-deallocation %s
 // RUN: %clang_cc1 -std=c++14 -fchar8_t -DNO_EXCEPTIONS -DCHAR8_T -verify -fsized-deallocation %s
 // RUN: %clang_cc1 -std=c++2a -fno-char8_t -DNO_EXCEPTIONS -DNO_CHAR8_T -verify -fsized-deallocation %s
+// RUN: %clang_cc1 -std=c++2b -freflection-ts -DREFLECTION -verify -fsized-deallocation %s
+
 
 // expected-no-diagnostics
 
@@ -343,4 +345,8 @@
 
 #if defined(COROUTINES) ? check(coroutines, 201703, 201703, 201703, 201703, 201703, 201703) : check(coroutines, 0, 0, 0, 0, 201703, 201703)
 #error "wrong value for __cpp_coroutines"
+#endif
+
+#if defined(REFLECTION) ? check(reflection, 0, 0, 0, 0, 0, 201902L) : check(reflection, 0, 0, 0, 0, 0, 0)
+#error "wrong value for __cpp_reflection"
 #endif

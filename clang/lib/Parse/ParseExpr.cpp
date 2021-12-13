@@ -1030,10 +1030,16 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
 
   case tok::kw___super:
   case tok::kw_decltype:
+  case tok::kw___unrefltype:
+    if (!getLangOpts().ReflectionTS && Tok.is(tok::kw___unrefltype)) {
+      Diag(Tok, diag::err_using_unrefltype_without_reflection);
+      return ExprError();
+    }
     // Annotate the token and tail recurse.
     if (TryAnnotateTypeOrScopeToken())
       return ExprError();
-    assert(Tok.isNot(tok::kw_decltype) && Tok.isNot(tok::kw___super));
+    assert(Tok.isNot(tok::kw_decltype) && Tok.isNot(tok::kw___unrefltype) &&
+           Tok.isNot(tok::kw___super));
     return ParseCastExpression(ParseKind, isAddressOfOperand, isTypeCast,
                                isVectorLiteral, NotPrimaryExpression);
 
@@ -1424,6 +1430,27 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     AllowSuffix = false;
     Res = ParseUnaryExprOrTypeTraitExpression();
     break;
+  case tok::kw_reflexpr:
+    if (!getLangOpts().ReflectionTS) {
+      return ExprError(Diag(Tok, diag::err_using_reflexpr_without_reflection));
+    }
+    Res = ParseReflexprExpression(false);
+    break;
+  case tok::kw___reflexpr_id:
+    if (!getLangOpts().ReflectionTS) {
+      return ExprError(Diag(Tok, diag::err_using_reflexpr_without_reflection));
+    }
+    Res = ParseReflexprExpression(true);
+    break;
+#define METAOBJECT_OP(A,Spelling,R,N) case tok::kw___metaobject_ ## Spelling:
+#include "clang/Basic/TokenKinds.def"
+    if (!getLangOpts().ReflectionTS) {
+      Diag(Tok, diag::err_using_metaobject_op_without_reflection)
+        << Tok.getName();
+      return ExprError();
+    }
+    return ParseMetaobjectOpExpression();
+
   case tok::ampamp: {      // unary-expression: '&&' identifier
     if (NotPrimaryExpression)
       *NotPrimaryExpression = true;
@@ -1523,6 +1550,8 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw__Float16:
   case tok::kw___float128:
   case tok::kw___ibm128:
+  case tok::kw___metaobject_id:
+  case tok::annot___unrefltype:
   case tok::kw_void:
   case tok::kw_typename:
   case tok::kw_typeof:
@@ -1532,6 +1561,14 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   {
     if (!getLangOpts().CPlusPlus) {
       Diag(Tok, diag::err_expected_expression);
+      return ExprError();
+    }
+    if (!getLangOpts().ReflectionTS && Tok.is(tok::annot___unrefltype)) {
+      Diag(Tok, diag::err_using_unrefltype_without_reflection);
+      return ExprError();
+    }
+    if (!getLangOpts().ReflectionTS && Tok.is(tok::kw___metaobject_id)) {
+      Diag(Tok, diag::err_using_metaobject_id_without_reflection);
       return ExprError();
     }
 

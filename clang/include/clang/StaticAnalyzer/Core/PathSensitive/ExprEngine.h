@@ -531,6 +531,22 @@ public:
   void VisitOffsetOfExpr(const OffsetOfExpr *Ex, ExplodedNode *Pred,
                          ExplodedNodeSet &Dst);
 
+  /// VisitReflexprIdExpr - Transfer function for reflexpr.
+  void VisitReflexprIdExpr(const ReflexprIdExpr *Ex,
+                           ExplodedNode *Pred, ExplodedNodeSet &Dst);
+
+  /// VisitMetaobjectIdExpr - Transfer function for reflexpr.
+  void VisitMetaobjectIdExpr(const MetaobjectIdExpr *Ex,
+                             ExplodedNode *Pred, ExplodedNodeSet &Dst);
+
+  /// VisitUnaryMetaobjectOpExpr - Transfer function for reflexpr.
+  void VisitUnaryMetaobjectOpExpr(const UnaryMetaobjectOpExpr *Ex,
+                                  ExplodedNode *Pred, ExplodedNodeSet &Dst);
+
+  /// VisitNaryMetaobjectOpExpr - Transfer function for metaobject operation.
+  void VisitNaryMetaobjectOpExpr(const NaryMetaobjectOpExpr *Ex,
+                                 ExplodedNode *Pred, ExplodedNodeSet &Dst);
+
   /// VisitUnaryExprOrTypeTraitExpr - Transfer function for sizeof.
   void VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *Ex,
                                      ExplodedNode *Pred, ExplodedNodeSet &Dst);
