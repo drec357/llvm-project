@@ -1474,7 +1474,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     break;
 
   case tok::kw___select:
-    Res = ParseBuiltinSelectExpr();
+    Res = ParseCXXSelectExpr();
     break;
 
   case tok::annot_typename:

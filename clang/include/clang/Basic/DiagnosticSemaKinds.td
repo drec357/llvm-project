@@ -2788,8 +2788,8 @@ def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
 def err_index_not_ice : Error<
   "index not an integer constant expression.">;
-def err_index_exceeds_bounds : Error<
-  "index exceeds number of members">;
+def err_index_exceeds_numaccmems : Error<
+  "index exceeds number of accessible members">;
 def err_expected_object_or_pack : Error<
   "expected class object variable or pack">;
 
@@ -5444,7 +5444,7 @@ def err_fold_expression_limit_exceeded: Error<
   "limit of %1">, DefaultFatal, NoSFINAE;
 
 def err_templatefor_range_var_not_expandable : Error<
-  "type %0 is not compile-time expandable">;
+  "object of type %0 not a tuple, constant array, or range">;
 def note_not_overloaded_function : Note<"not an overloaded function">;
 def note_no_member : Note<"no member named %0 in %1">;
 def note_incomplete_type : Error<

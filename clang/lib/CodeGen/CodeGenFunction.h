@@ -3308,9 +3308,9 @@ public:
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
-  void EmitCXXTemplateForRangePackStmt(const CXXTemplateForRangePackStmt &S,
+  void EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
                                        ArrayRef<const Attr *> Attrs = None);
-  void EmitCXXTemplateForRangeVarStmt(const CXXTemplateForRangeVarStmt &S,
+  void EmitCXXCompositeExpansionStmt(const CXXCompositeExpansionStmt &S,
                                       ArrayRef<const Attr *> Attrs = None);
 
   /// Controls insertion of cancellation exit blocks in worksharing constructs.
@@ -3899,8 +3899,8 @@ public:
   LValue EmitMatrixSubscriptExpr(const MatrixSubscriptExpr *E);
   LValue EmitOMPArraySectionExpr(const OMPArraySectionExpr *E,
                                  bool IsLowerBound = true);
-  LValue EmitBuiltinSelectMemberExpr(const BuiltinSelectMemberExpr *E);
-  LValue EmitBuiltinSelectPackElemExpr(const BuiltinSelectPackElemExpr *E);
+  LValue EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
+  LValue EmitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E);
   LValue EmitExtVectorElementExpr(const ExtVectorElementExpr *E);
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);

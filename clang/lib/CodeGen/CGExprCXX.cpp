@@ -2325,11 +2325,11 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 }
 
 LValue
-CodeGenFunction::EmitBuiltinSelectMemberExpr(const BuiltinSelectMemberExpr *E) {
+CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
   return EmitLValue(E->getSubstituteExpr());
 }
 
 LValue
-CodeGenFunction::EmitBuiltinSelectPackElemExpr(const BuiltinSelectPackElemExpr *E) {
+CodeGenFunction::EmitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E) {
   return EmitLValue(E->getSubstituteExpr());
 }

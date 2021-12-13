@@ -1791,10 +1791,10 @@ enum StmtCode {
   /// A CXXForRangeStmt record.
   STMT_CXX_FOR_RANGE,
 
-  /// A CXXTemplateForRangeVarStmt record.
+  /// A CXXCompositeExpansionStmt record.
   STMT_CXX_PACK_EXPANSION,
 
-  /// A CXXTemplateForRangeVarStmt record.
+  /// A CXXCompositeExpansionStmt record.
   STMT_CXX_COMP_EXPANSION,
 
   /// A CXXOperatorCallExpr record.

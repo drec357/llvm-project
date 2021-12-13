@@ -65,7 +65,7 @@ class PackExpansionExpr;
 class SubstNonTypeTemplateParmExpr;
 class CoroutineSuspendExpr;
 class DependentCoawaitExpr;
-class BuiltinSelectExpr;
+class CXXSelectExpr;
 class CXXNewExpr;
 class CXXPseudoDestructorExpr;
 class OverloadExpr;
@@ -150,7 +150,7 @@ ExprDependence computeDependence(PackExpansionExpr *E);
 ExprDependence computeDependence(SubstNonTypeTemplateParmExpr *E);
 ExprDependence computeDependence(CoroutineSuspendExpr *E);
 ExprDependence computeDependence(DependentCoawaitExpr *E);
-ExprDependence computeDependence(BuiltinSelectExpr *E);
+ExprDependence computeDependence(CXXSelectExpr *E);
 ExprDependence computeDependence(CXXNewExpr *E);
 ExprDependence computeDependence(CXXPseudoDestructorExpr *E);
 ExprDependence computeDependence(OverloadExpr *E, bool KnownDependent,

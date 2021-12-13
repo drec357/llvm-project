@@ -1960,8 +1960,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
       ColonProtectionRAIIObject ColonProtection(*this, MightBeForRangeStmt);
 
       // If TemplateFor is enabled, this might be an expansion
-      // over a constexpr range, so check if the variable is marked
-      // constexpr:
+      // over a constexpr range.
       if (getLangOpts().TemplateFor && TemplateLoc.isValid())
         TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
@@ -2142,7 +2141,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInfo.RangeExpr.get());
 
-    if (TemplateLoc.isInvalid() && ConstexprLoc.isInvalid()) {
+    if (TemplateLoc.isInvalid()) {
       ForRangeStmt = Actions.ActOnCXXForRangeStmt(
         getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
         ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
@@ -2150,7 +2149,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     } else {
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
           getCurScope(), ForLoc, TemplateLoc, ForRangeInfo.LoopVar.get(),
-          ForRangeInfo.ColonLoc, CorrectedRange.get(),
+          ForRangeInfo.ColonLoc, ForRangeInfo.StructLoc, CorrectedRange.get(),
           T.getCloseLocation(), Sema::BFRK_Build,
           ConstexprLoc.isValid());
     }

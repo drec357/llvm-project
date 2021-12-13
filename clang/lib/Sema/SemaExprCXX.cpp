@@ -8688,55 +8688,45 @@ concepts::Requirement *Sema::ActOnSimpleRequirement(Expr *E) {
 }
 
 ExprResult
-Sema::ActOnBuiltinSelectMemberExpr(SourceLocation SelectLoc,
-                                   Expr *Range, Expr *Index) {
-  // Make sure the range expression refers to a class, or is a variable
-  // of dependent type.
-  if (!Range || !isa<DeclRefExpr>(Range))
-    return ExprError(Diag(Range->getExprLoc(),
-                          diag::err_expected_object_or_pack));
-  DeclRefExpr *RangeDRE = cast<DeclRefExpr>(Range);
-  Decl *FoundDecl = RangeDRE->getDecl();
-  if (!isa<VarDecl>(FoundDecl)) {
-    Diag(RangeDRE->getExprLoc(), diag::err_expected_object_or_pack);
+Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
+                               Expr *Index, SourceLocation KWLoc,
+                               SourceLocation BaseLoc, SourceLocation IdxLoc)
+{
+   // Get the type of the struct we are trying to expand.
+  QualType BaseType = Base->getType().getNonReferenceType();
+
+  ExprResult BaseDRE =
+    BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+  if (BaseDRE.isInvalid())
     return ExprError();
-  }
-  VarDecl *RangeVar = cast<VarDecl>(FoundDecl);
-  QualType RangeType = RangeVar->getType().getNonReferenceType();
+  Expr *BaseRef = BaseDRE.get();
 
-  /// If the Range has dependent type there is nothing we can do.  Return
-  /// a dependent expression.
-  if (RangeType->isDependentType())
-    return BuiltinSelectMemberExpr::Create(Context, SelectLoc,
-                                           RangeDRE, Index);
+  // If the base is dependent, we won't be able to do any destructuring yet.
+  if (BaseType->isDependentType())
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, 0, nullptr,
+                                             Base->getLocation(), KWLoc,
+                                             BaseLoc);
 
-  // The first (usually index-dependent) expression to select from this record
-  // type will have to set up the cache of fields from which it and all later
-  // select expression will select.
-  CXXRecordDecl *OrigRD = RangeType->getAsCXXRecordDecl();
-  if (!OrigRD)
-    return ExprError(Diag(RangeDRE->getExprLoc(),
-                          diag::err_expected_object_or_pack));
-
-  // This implem borrows from functions designed to handle
-  // built-in decompositions of a class type.
   CXXCastPath BasePath;
-  DeclAccessPair BasePair = FindDecomposableBaseClass(
-      RangeDRE->getLocation(), OrigRD, BasePath);
+  DeclAccessPair BasePair =
+    FindDecomposableBaseClass
+    (Base->getLocation(), OrigRD, BasePath);
   CXXRecordDecl *RD = cast<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
     return ExprError();
-  SourceLocation RDLoc = RD->getLocation();
+  SourceLocation Loc = RD->getLocation();
 
-  auto *Fields = new (Context) llvm::SmallVector<MemberExpr *, 8>;
-
-  auto It = Context.Destructures.find(RD->getCanonicalDecl());
-  if (It != Context.Destructures.end())
+  auto It = Context.Destructures.find(Base->getInit());
+  ASTContext::MemberVector *Fields;
+  if (It != Context.Destructures.end()) {
     Fields = It->second;
-  else {
-    QualType RecordTy =
+    assert(Fields);
+  } else {
+    Fields = new (Context) ASTContext::MemberVector();
+    QualType BaseClassType =
       Context.getQualifiedType(Context.getRecordType(RD),
-                               RangeType.getQualifiers());
+                               BaseType.getQualifiers());
 
     // Create and store a reference expression to each field.
     unsigned I = 0;
@@ -8745,8 +8735,9 @@ Sema::ActOnBuiltinSelectMemberExpr(SourceLocation SelectLoc,
         continue;
 
       if (FD->isAnonymousStructOrUnion()) {
-        Diag(RDLoc, diag::err_decomp_decl_anon_union_member)
-            << RecordTy << FD->getType()->isUnionType();
+        Diag
+          (Base->getLocation(), diag::err_decomp_decl_anon_union_member)
+          << BaseClassType << FD->getType()->isUnionType();
         Diag(FD->getLocation(), diag::note_declared_at);
         return true;
       }
@@ -8754,63 +8745,70 @@ Sema::ActOnBuiltinSelectMemberExpr(SourceLocation SelectLoc,
       // The field must be accessible in the context of the expansion.
       // We already checked that the base class is accessible.
       CheckStructuredBindingMemberAccess(
-          RDLoc, const_cast<CXXRecordDecl *>(OrigRD),
-          DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
+        Loc, const_cast<CXXRecordDecl *>(OrigRD),
+        DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
                                BasePair.getAccess(), FD->getAccess())));
 
-      // Build a reference to the field and add it to Fields
+      // Initialize the binding to Base.FD
       ExprResult E =
-        BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Range->getExprLoc());
+        BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
       if (E.isInvalid())
         return true;
-      E = ImpCastExprToType(E.get(), RangeType, CK_UncheckedDerivedToBase,
+      E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
                             VK_LValue, &BasePath);
       if (E.isInvalid())
         return true;
-      E = BuildFieldReferenceExpr(
-          E.get(), /*IsArrow*/false, RDLoc,
-          CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
-          DeclarationNameInfo(FD->getDeclName(), RDLoc));
+      E = BuildFieldReferenceExpr
+        (E.get(), /*IsArrow*/ false, Loc,
+         CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
+         DeclarationNameInfo(FD->getDeclName(), Loc));
       if (E.isInvalid())
         return true;
 
       Fields->push_back(cast<MemberExpr>(E.get()));
       ++I;
     }
-    assert(I == Fields->size());
-    Context.Destructures.insert({RD->getCanonicalDecl(), Fields});
+
+    // TODO: create "BadNumberOfBindings()" equivalent for
+    // expansions.
+    assert(I == Fields->size() && "Bad Number of Bindings");
+    Context.Destructures.insert({Base->getInit(), Fields});
   }
 
-  // If the index is dependent, return a dependent expression
-  // (i.e. with the Substitute remaining nullptr).
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
   if (Index->isTypeDependent() || Index->isValueDependent())
-    return BuiltinSelectMemberExpr::Create(Context, SelectLoc,
-                                           RangeDRE, Index,
-                                           Fields->size());
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, Fields->size(), RD, Loc,
+                                             KWLoc, BaseLoc);
 
-  // Evaluate the index
+  // Index must be a integer constant expression.
   Expr::EvalResult Res;
   if (!Index->EvaluateAsInt(Res, Context))
-    return ExprError(Diag(Index->getExprLoc(), diag::err_index_not_ice));
-
+    return ExprError(Diag(IdxLoc, diag::err_index_not_ice));
   unsigned I = Res.Val.getInt().getZExtValue();
+
   if (I >= Fields->size()) {
-    Diag(Index->getExprLoc(), diag::err_index_exceeds_bounds);
+    assert(KWLoc.isValid() &&
+           "Implicitly generated index exceeds bounds!");
+    Diag(Index->getExprLoc(), diag::err_index_exceeds_numaccmems);
     return ExprError();
   }
 
-  return BuiltinSelectMemberExpr::Create(Context, SelectLoc, RangeDRE,
-                                         Index, Fields->size(),
-                                         /*Substitute=*/(*Fields)[I]);
+  return new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
+                                           Index, Fields->size(), RD, Loc,
+                                           KWLoc, BaseLoc,
+                                           /*Substitute=*/(*Fields)[I]);
 }
 
+
+
 ExprResult
-Sema::ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
-                                     Expr *Range, Expr *Index) {
+Sema::ActOnCXXSelectPackElemExpr(SourceLocation SelectLoc,
+                                 Expr *Range, Expr *Index) {
   // If the index is dependent, return a dependent expression
   if (Index->isValueDependent() || Index->isTypeDependent())
-    return BuiltinSelectPackElemExpr::Create(Context, SelectLoc,
-                                             Range, Index);
+    return CXXSelectPackElemExpr::Create(Context, SelectLoc, Range, Index);
 
   // If the pack has not been substituted yet, return a dependent expression.
   TemplateArgument RangeArg(Range);
@@ -8818,8 +8816,7 @@ Sema::ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
          RangeArg.containsUnexpandedParameterPack());
   llvm::Optional<unsigned> Size = getFullyPackExpandedSize(RangeArg);
   if (!Size.hasValue())
-    return BuiltinSelectPackElemExpr::Create(Context, SelectLoc,
-                                             Range, Index);
+    return CXXSelectPackElemExpr::Create(Context, SelectLoc, Range, Index);
 
   // Evaluate the index.
   Expr::EvalResult Res;
@@ -8828,7 +8825,9 @@ Sema::ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
   std::size_t I = Res.Val.getInt().getZExtValue();
 
   if (I >= Size.getValue()) {
-    Diag(Range->getExprLoc(), diag::err_index_exceeds_bounds);
+    assert(SelectLoc.isValid() &&
+           "Implicitly generated index exceeds bounds");
+    Diag(SelectLoc, diag::err_index_exceeds_numaccmems);
     return ExprError();
   }
 
@@ -8839,7 +8838,7 @@ Sema::ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
     VD = FPPE->getExpansion(I);
   else {
     assert(isa<SubstNonTypeTemplateParmPackExpr>(Range) &&
-        "Unhandled pack expression kind");
+           "Unhandled pack expression kind");
     auto NTTPE = dyn_cast<SubstNonTypeTemplateParmPackExpr>(Range);
     const TemplateArgument &TA = NTTPE->getArgumentPack().getPackAsArray()[I];
     VD = TA.getAsDecl();
@@ -8852,7 +8851,7 @@ Sema::ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
   if (SubstituteDRE.isInvalid())
     return ExprError();
 
-  return BuiltinSelectPackElemExpr::Create(
+  return CXXSelectPackElemExpr::Create(
       Context, SelectLoc, Range, Index,
       cast<DeclRefExpr>(SubstituteDRE.get()));
 

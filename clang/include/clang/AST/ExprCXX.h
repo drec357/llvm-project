@@ -4875,17 +4875,17 @@ public:
 /// class (esesntially how \c std::get<I>(obj) would work if obj were a tuple),
 /// or the Ith element of the pack.
 ///
-/// These are generated implicitly by CXXTemplateForRangeStmts, but
+/// These are generated implicitly by CXXExpansionStmts, but
 /// can also be written explicitly.
 ///
-class BuiltinSelectExpr : public Expr {
+class CXXSelectExpr : public Expr {
   friend class ASTStmtReader;
 
   Stmt *RangeAndIndex[2]; //children
   Expr *Substitute;       //not a child expression
 
 protected:
-  BuiltinSelectExpr(StmtClass SC, QualType T, SourceLocation SelectLoc,
+  CXXSelectExpr(StmtClass SC, QualType T, SourceLocation SelectLoc,
                     Expr *Range, Expr *Index, Expr *Substitute)
     : Expr(SC, T, VK_LValue, OK_Ordinary),
       RangeAndIndex{Range, Index}, Substitute(Substitute) {
@@ -4893,7 +4893,7 @@ protected:
     setDependence(computeDependence(this));
   }
 
-  BuiltinSelectExpr(StmtClass SC, EmptyShell Empty)
+  CXXSelectExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
 
   void setRangeExpr(Expr *V) { RangeAndIndex[0] = V; }
@@ -4922,9 +4922,9 @@ public:
 
   /// The location of the __select keyword, if explicitly written.
   SourceLocation getSelectLoc() const {
-    return BuiltinSelectExprBits.SelectLoc;
+    return CXXSelectExprBits.SelectLoc;
   }
-  void setSelectLoc(SourceLocation L) { BuiltinSelectExprBits.SelectLoc = L; }
+  void setSelectLoc(SourceLocation L) { CXXSelectExprBits.SelectLoc = L; }
 
   /// Return the location of the pack or variable from which this selects
   SourceLocation getRangeLoc() const { return getRangeExpr()->getExprLoc(); }
@@ -4951,8 +4951,8 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == BuiltinSelectMemberExprClass ||
-      T->getStmtClass() == BuiltinSelectPackElemExprClass;
+    return T->getStmtClass() == CXXSelectMemberExprClass ||
+      T->getStmtClass() == CXXSelectPackElemExprClass;
   }
 
   child_range children() {
@@ -4962,100 +4962,85 @@ public:
 
 /// Represents a \c __select(I,obj) expression, possibly implicitly generated,
 /// which substitutes the Ith accessible, nonstatic field of a class object.
-class BuiltinSelectMemberExpr final : public BuiltinSelectExpr {
+// Selects the __Nth public, nonstatic field of an object of record type.
+class CXXSelectMemberExpr final : public CXXSelectExpr {
   friend class ASTStmtReader;
 
-  /// The total number of fields from which we are to select.
-  /// The evaluated value of Index will be less than this.
-  /// It may seem odd to store this information here; however
-  /// this value is calculated during construction of this node
-  /// and that information is important to other nodes which
-  /// use this node (CXXTemplateForRangeStmt).
-  int NumFieldsInRange = -1;
+  /// The canonical record of the base we are selecting on.
+  CXXRecordDecl *Record;
 
-  BuiltinSelectMemberExpr(QualType T, SourceLocation SelectLoc,
-                          DeclRefExpr *Range, Expr *Index,
-                          int NumFieldsInRange, MemberExpr *Substitute)
-      : BuiltinSelectExpr(BuiltinSelectMemberExprClass, T, SelectLoc,
-                          Range, Index, Substitute),
-        NumFieldsInRange(NumFieldsInRange)
-  {
-    assert(NumFieldsInRange >= 0 || Range->getType()->isDependentType() &&
-           "If the range type is dependent, a valid NumFieldsInRange "
-           "needs to be calculated and passed here");
-  }
+  /// The location of the record.
+  SourceLocation RecordLoc;
 
-  BuiltinSelectMemberExpr(EmptyShell Empty)
-    : BuiltinSelectExpr(BuiltinSelectMemberExprClass, Empty) {}
+  /// The total number of fields from which to select (i.e the evaluated index
+  /// must be less than this).
+  int NumFields;
 
 public:
-  static BuiltinSelectMemberExpr *
-  Create(ASTContext &Context, SourceLocation SelectLoc,
-         DeclRefExpr *RangeDRE, Expr *Index, int NumFieldsInRange = -1,
-         MemberExpr *SubstituteME = nullptr);
+  //FIXME make this private, use a Create function instead.
+  CXXSelectMemberExpr(Expr *Base,
+                      QualType T,
+                      Expr *Index,
+                      std::size_t NumFields,
+                      CXXRecordDecl *RD,
+                      SourceLocation RecordLoc,
+                      SourceLocation SelectLoc,
+                      SourceLocation BaseLoc,
+                      Expr *Substitute = nullptr)
+    : CXXSelectExpr(CXXSelectMemberExprClass, T, SelectLoc,
+                    Base, Index, Substitute),
+      Record(RD), RecordLoc(RecordLoc), NumFields(NumFields) {}
 
-  static BuiltinSelectMemberExpr *Create(ASTContext &Context,
-                                         EmptyShell Empty);
+  CXXSelectMemberExpr(EmptyShell Empty)
+    : CXXSelectExpr(CXXSelectMemberExprClass, Empty) {}
 
-  /// The total number of accessible fields in the range CXXRecordDecl from
-  /// which to select.  Set to -1 if and only if the range type is dependent.
-  /// When >=0, and the index is evaluated, the index will be less than this.
-  int getNumFieldsInRange() const { return NumFieldsInRange; }
-  void setNumFieldsInRange(int V) { NumFieldsInRange = V; }
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getRecordLoc() const { return RecordLoc; }
+  CXXRecordDecl *getRecord() const { return Record; }
+  int getNumFields() const { return NumFields; }
 
-  /// The reference to a class object.
-  DeclRefExpr *getRangeExpr() const {
-    return cast<DeclRefExpr>(BuiltinSelectExpr::getRangeExpr());
-  }
-  void setRangeExpr(DeclRefExpr *V) { BuiltinSelectExpr::setRangeExpr(V); }
-
-  /// The MemberExpr to substitute for this expression during
-  /// evaluation.  Null when this is a dependent expression.
   MemberExpr *getSubstituteExpr() const {
-    return cast<MemberExpr>(BuiltinSelectExpr::getSubstituteExpr());
-  }
-  void setSubstituteExpr(MemberExpr *V) {
-    BuiltinSelectExpr::setSubstituteExpr(V);
+    return cast_or_null<MemberExpr>(CXXSelectExpr::getSubstituteExpr());
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == BuiltinSelectMemberExprClass;
+    return T->getStmtClass() == CXXSelectMemberExprClass;
   }
 };
 
 /// Represents a \c __select(I,pack) expression, possibly implicitly generated,
 /// which substitutes the Ith element of an unexpanded pack.
-class BuiltinSelectPackElemExpr final : public BuiltinSelectExpr {
-  BuiltinSelectPackElemExpr(QualType T, SourceLocation SelectLoc,
+class CXXSelectPackElemExpr final : public CXXSelectExpr {
+  CXXSelectPackElemExpr(QualType T, SourceLocation SelectLoc,
                             Expr *RangeFPPE_or_NTTPE,
-                            Expr *Index, DeclRefExpr *Substitute)
-      : BuiltinSelectExpr(BuiltinSelectPackElemExprClass, T, SelectLoc,
-                          RangeFPPE_or_NTTPE, Index, Substitute) {
+                            Expr *Index, DeclRefExpr *SubstituteDRE)
+      : CXXSelectExpr(CXXSelectPackElemExprClass, T, SelectLoc,
+                          RangeFPPE_or_NTTPE, Index, SubstituteDRE) {
     assert(isa<FunctionParmPackExpr>(RangeFPPE_or_NTTPE) ||
            isa<SubstNonTypeTemplateParmPackExpr>(RangeFPPE_or_NTTPE) &&
             "Unhandled pack expression");
   }
 
-  BuiltinSelectPackElemExpr(EmptyShell Empty)
-    : BuiltinSelectExpr(BuiltinSelectPackElemExprClass, Empty) {}
+  CXXSelectPackElemExpr(EmptyShell Empty)
+    : CXXSelectExpr(CXXSelectPackElemExprClass, Empty) {}
 
 public:
-  static BuiltinSelectPackElemExpr *
+  static CXXSelectPackElemExpr *
   Create(ASTContext &Context, SourceLocation SelectLoc,
          Expr *RangeFPPE_or_NTTPE, Expr *Index,
          DeclRefExpr *SubstituteDRE = nullptr);
 
-  static BuiltinSelectPackElemExpr *Create(ASTContext &Context,
+  static CXXSelectPackElemExpr *Create(ASTContext &Context,
                                            EmptyShell Empty);
 
   /// The range expression may either be a FunctionParmPackExpr or a
   /// SubstNonTypeTemplateParmPackExpr.  This dyn_casts to the the former.
   FunctionParmPackExpr *
   getRangeAsFunctionParmPackExpr() const {
-    return dyn_cast<FunctionParmPackExpr>(BuiltinSelectExpr::getRangeExpr());
+    return dyn_cast<FunctionParmPackExpr>(CXXSelectExpr::getRangeExpr());
   }
   void setRangeExpr(FunctionParmPackExpr *V) {
-    BuiltinSelectExpr::setRangeExpr(V);
+    CXXSelectExpr::setRangeExpr(V);
   }
 
   /// The range expression may either be a FunctionParmPackExpr or a
@@ -5063,23 +5048,23 @@ public:
   SubstNonTypeTemplateParmPackExpr *
   getRangeAsSubstNonTypeTemplateParmPackExpr() const {
     return dyn_cast<SubstNonTypeTemplateParmPackExpr>(
-        BuiltinSelectExpr::getRangeExpr());
+        CXXSelectExpr::getRangeExpr());
   }
   void setRangeExpr(SubstNonTypeTemplateParmPackExpr *V) {
-    BuiltinSelectExpr::setRangeExpr(V);
+    CXXSelectExpr::setRangeExpr(V);
   }
 
   /// The MemberExpr to substitute for this expression during
   /// evaluation.  Null when this is a dependent expression.
   DeclRefExpr *getSubstituteExpr() const {
-    return cast<DeclRefExpr>(BuiltinSelectExpr::getSubstituteExpr());
+    return cast_or_null<DeclRefExpr>(CXXSelectExpr::getSubstituteExpr());
   }
   void setSubstituteExpr(DeclRefExpr *V) {
-    BuiltinSelectExpr::setSubstituteExpr(V);
+    CXXSelectExpr::setSubstituteExpr(V);
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == BuiltinSelectPackElemExprClass;
+    return T->getStmtClass() == CXXSelectPackElemExprClass;
   }
 };
 

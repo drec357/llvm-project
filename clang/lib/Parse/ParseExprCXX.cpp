@@ -4037,7 +4037,7 @@ ExprResult Parser::ParseBuiltinBitCast() {
 }
 
 ExprResult
-Parser::ParseBuiltinSelectExpr() {
+Parser::ParseCXXSelectExpr() {
   assert(Tok.is(tok::kw___select) && "Not __select!");
   SourceLocation SelectLoc = ConsumeToken();
 
@@ -4057,17 +4057,30 @@ Parser::ParseBuiltinSelectExpr() {
   Expr *Range = Exprs.front();
   Expr *Index = Exprs.back();
 
-  // If this is a parameter pack, we don't need any knowledge
-  // of the record and there won't be a VarDecl. Just return here.
+  // Check if the range is an unexpanded parameter pack, e.g. a
+  // FunctionParmPackExpr.
   if (Range->containsUnexpandedParameterPack())
-    return Actions.ActOnBuiltinSelectPackElemExpr(SelectLoc, Range, Index);
+    return Actions.ActOnCXXSelectPackElemExpr(SelectLoc, Range, Index);
 
   // Otherwise, we expect to be the range to refer to a class object.
   if (!isa<DeclRefExpr>(Range)) {
     ExprResult TypoFix = Actions.CorrectDelayedTyposInExpr(Range).get();
-    if (TypoFix.get())
-      Range = TypoFix.get();
-    // We'll diagnose in ActOn...
+    if (!isa<DeclRefExpr>(TypoFix.get()))
+      return ExprError();
+    Range = TypoFix.get();
   }
-  return Actions.ActOnBuiltinSelectMemberExpr(SelectLoc, Range, Index);
+  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Range);
+  Decl *FoundDecl = BaseDRE->getDecl();
+  if (!isa<VarDecl>(FoundDecl))
+    return ExprError();
+  VarDecl *BaseVar =
+    cast<VarDecl>(FoundDecl);
+  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
+  if (!Record && !BaseVar->getType()->isDependentType())
+    return ExprError();
+
+  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl),
+                                          Index, SelectLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
 }

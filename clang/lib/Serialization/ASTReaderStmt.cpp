@@ -1005,7 +1005,7 @@ void ASTStmtReader::VisitOMPIteratorExpr(OMPIteratorExpr *E) {
   }
 }
 
-void ASTStmtReader::VisitBuiltinSelectExpr(BuiltinSelectExpr *E) {
+void ASTStmtReader::VisitCXXSelectExpr(CXXSelectExpr *E) {
   VisitExpr(E);
   E->setSelectLoc(readSourceLocation());
   E->setRangeExpr(Record.readSubExpr());
@@ -1013,14 +1013,16 @@ void ASTStmtReader::VisitBuiltinSelectExpr(BuiltinSelectExpr *E) {
   E->setSubstituteExpr(Record.readSubExpr());
 }
 
-void ASTStmtReader::VisitBuiltinSelectMemberExpr(BuiltinSelectMemberExpr *E) {
-  VisitBuiltinSelectExpr(E);
-  E->setNumFieldsInRange(Record.readInt());
+void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitCXXSelectExpr(E);
+  E->Record = Record.readDeclAs<CXXRecordDecl>();
+  E->RecordLoc = readSourceLocation();
+  E->NumFields = Record.readInt();
 }
 
-void ASTStmtReader::VisitBuiltinSelectPackElemExpr(
-                                               BuiltinSelectPackElemExpr *E) {
-  VisitBuiltinSelectExpr(E);
+void ASTStmtReader::VisitCXXSelectPackElemExpr(
+                                               CXXSelectPackElemExpr *E) {
+  VisitCXXSelectExpr(E);
 }
 
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
@@ -1693,8 +1695,8 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXTemplateForRangeStmt(
-                                             CXXTemplateForRangeStmt *S) {
+void ASTStmtReader::VisitCXXExpansionStmt(
+                                             CXXExpansionStmt *S) {
   VisitStmt(S);
   S->TemplateForLoc = readSourceLocation();
   S->ConstexprLoc = readSourceLocation();
@@ -1706,17 +1708,17 @@ void ASTStmtReader::VisitCXXTemplateForRangeStmt(
   S->setBody(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXTemplateForRangeVarStmt(
-                                              CXXTemplateForRangeVarStmt *S) {
-  VisitCXXTemplateForRangeStmt(S);
+void ASTStmtReader::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
   S->setRangeStmt(Record.readSubStmt());
   S->setBeginStmt(Record.readSubStmt());
   S->setEndStmt(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXTemplateForRangePackStmt(
-                                             CXXTemplateForRangePackStmt *S) {
-  VisitCXXTemplateForRangeStmt(S);
+void ASTStmtReader::VisitCXXPackExpansionStmt(
+                                             CXXPackExpansionStmt *S) {
+  VisitCXXExpansionStmt(S);
   S->setRangeExprStmt(Record.readSubStmt());
 }
 
@@ -3237,11 +3239,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       break;
 
     case STMT_CXX_PACK_EXPANSION:
-      S = CXXTemplateForRangePackStmt::Create(Context, Empty);
+      S = CXXPackExpansionStmt::Create(Context, Empty);
       break;
 
     case STMT_CXX_COMP_EXPANSION:
-      S = CXXTemplateForRangeVarStmt::Create(Context, Empty);
+      S = CXXCompositeExpansionStmt::Create(Context, Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

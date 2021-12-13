@@ -4817,30 +4817,30 @@ public:
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
   StmtResult
-  ActOnCXXTemplateForRangeStmt(Scope *S, SourceLocation TemplateForLoc,
-                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
-                               SourceLocation ColonLoc,
-                               SourceLocation StructLoc, Expr *RangeVarDS,
-                               SourceLocation RParenLoc,
-                               BuildForRangeKind Kind, bool IsConstexpr);
+  ActOnCXXExpansionStmt(Scope *S, SourceLocation TemplateForLoc,
+                        SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                        SourceLocation ColonLoc,
+                        SourceLocation StructLoc, Expr *RangeVarDS,
+                        SourceLocation RParenLoc,
+                        BuildForRangeKind Kind, bool IsConstexpr);
   StmtResult
-  ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
-                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
-                               SourceLocation ColonLoc,
-                               SourceLocation StructLoc, Stmt *RangeVarDS,
-                               SourceLocation RParenLoc, BuildForRangeKind Kind,
-                               bool IsConstexpr);
-  /// Build a CXXTemplateForRangeStmt over a pack.
+  ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
+                        SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                        SourceLocation ColonLoc,
+                        SourceLocation StructLoc, Stmt *RangeVarDS,
+                        SourceLocation RParenLoc, BuildForRangeKind Kind,
+                        bool IsConstexpr);
+  /// Build a CXXExpansionStmt over a pack.
   StmtResult
-  ActOnCXXTemplateForRangeStmt(SourceLocation TemplateForLoc,
-                               SourceLocation ConstexprLoc, Stmt *LoopVarDS,
-                               SourceLocation ColonLoc, Expr *RangeExpr,
-                               SourceLocation RParenLoc, BuildForRangeKind Kind,
-                               bool IsConstexpr);
+  ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
+                        SourceLocation ConstexprLoc, Stmt *LoopVarDS,
+                        SourceLocation ColonLoc, Expr *RangeExpr,
+                        SourceLocation RParenLoc, BuildForRangeKind Kind,
+                        bool IsConstexpr);
 
-  StmtResult ActOnCXXTemplateForRangeStmtError(Stmt *S);
+  StmtResult ActOnCXXExpansionStmtError(Stmt *S);
 
-  StmtResult FinishCXXTemplateForRangeStmt(Stmt *Expansion, Stmt *Body);
+  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
 
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
@@ -7359,10 +7359,13 @@ public:
   DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
                                            const CXXRecordDecl *RD,
                                            CXXCastPath &BasePath);
-  ExprResult ActOnBuiltinSelectMemberExpr(SourceLocation SelectLoc,
-                                          Expr *Range, Expr *Index);
-  ExprResult ActOnBuiltinSelectPackElemExpr(SourceLocation SelectLoc,
-                                            Expr *Range, Expr *Index);
+  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
+                                      VarDecl *Base, Expr *Index,
+                                      SourceLocation SelectLoc,
+                                      SourceLocation BaseLoc = SourceLocation(),
+                                      SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnCXXSelectPackElemExpr(SourceLocation SelectLoc,
+                                        Expr *Range, Expr *Index);
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,
@@ -9152,8 +9155,8 @@ public:
                           concepts::NestedRequirement *Req, ConstraintsCheck,
                           SourceRange InstantiationRange = SourceRange());
 
-    /// \brief Note that we are substituting into the body of a template-for
-    /// statement.
+    /// \brief Note that we are substituting into the body of a compile-time
+    /// expansion statement [TemplateFor].
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);

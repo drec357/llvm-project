@@ -361,7 +361,7 @@ ExprDependence clang::computeDependence(DependentCoawaitExpr *E) {
          ExprDependence::TypeValueInstantiation;
 }
 
-ExprDependence clang::computeDependence(BuiltinSelectExpr *E) {
+ExprDependence clang::computeDependence(CXXSelectExpr *E) {
   ExprDependence D = E->getIndexExpr()->getDependence() |
                      toExprDependence(E->getType()->getDependence());
   return D;

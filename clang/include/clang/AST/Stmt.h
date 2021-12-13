@@ -964,8 +964,8 @@ protected:
     SourceLocation RequiresKWLoc;
   };
 
-  class BuiltinSelectExprBitfields {
-    friend class BuiltinSelectExpr;
+  class CXXSelectExprBitfields {
+    friend class CXXSelectExpr;
 
     unsigned : NumExprBits;
 
@@ -1076,7 +1076,7 @@ protected:
     SubstNonTypeTemplateParmExprBitfields SubstNonTypeTemplateParmExprBits;
     LambdaExprBitfields LambdaExprBits;
     RequiresExprBitfields RequiresExprBits;
-    BuiltinSelectExprBitfields BuiltinSelectExprBits;
+    CXXSelectExprBitfields CXXSelectExprBits;
 
     // C++ Coroutines TS expressions
     CoawaitExprBitfields CoawaitBits;

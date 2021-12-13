@@ -3178,7 +3178,7 @@ private:
   // Metaprogramming
 
   /// Parse a __select expression
-  ExprResult ParseBuiltinSelectExpr();
+  ExprResult ParseCXXSelectExpr();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

@@ -5318,13 +5318,14 @@ void Sema::InstantiateVariableInitializer(
 
     if (!Init.isInvalid()) {
       Expr *InitExpr = Init.get();
-
       if (Var->hasAttr<DLLImportAttr>() &&
           (!InitExpr ||
            !InitExpr->isConstantInitializer(getASTContext(), false))) {
         // Do not dynamically initialize dllimport variables.
       } else if (InitExpr) {
         bool DirectInit = OldVar->isDirectInit();
+        if (OldVar->getNonGlobalRefsInConstInitOkay())
+          Var->setNonGlobalRefsInConstInitOkay();
         AddInitializerToDecl(Var, InitExpr, DirectInit);
       } else
         ActOnUninitializedDecl(Var);

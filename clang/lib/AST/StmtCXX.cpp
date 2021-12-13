@@ -84,18 +84,6 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
 
-VarDecl *CXXTemplateForRangeVarStmt::getRangeVariable() {
-  Decl *RV = cast<DeclStmt>(getRangeStmt())->getSingleDecl();
-  assert(RV && "No range variable in CXXTemplateForRangeStmt");
-  return cast<VarDecl>(RV);
-}
-
-Expr *CXXTemplateForRangePackStmt::getRangeExpr() const {
-  assert(isa<Expr>(getRangeStmt()) && "Range is not an expression.");
-  Expr *RangeExpr = cast<Expr>(getRangeStmt());
-  return RangeExpr;
-}
-
 VarDecl *CXXExpansionStmt::getLoopVariable() {
   Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
   assert(LV && "No loop variable in CXXExpansionStmt");
@@ -107,7 +95,51 @@ const VarDecl *CXXExpansionStmt::getLoopVariable() const {
 }
 
 NonTypeTemplateParmDecl *CXXExpansionStmt::getInductionVariable() {
-  return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
+  return cast<NonTypeTemplateParmDecl>(InductionVarTPL->getParam(0));
+}
+
+CXXCompositeExpansionStmt *
+CXXCompositeExpansionStmt::Create(ASTContext &Context, DeclStmt *LoopVarDS,
+                                  DeclStmt *RangeVarDS,
+                                  TemplateParameterList *InductionVarTPL,
+                                  std::size_t N, SourceLocation TFL,
+                                  SourceLocation CEL, SourceLocation CL,
+                                  SourceLocation SL, SourceLocation RPL) {
+  assert(RangeVarDS);
+  return new (Context) CXXCompositeExpansionStmt(
+        LoopVarDS, RangeVarDS, InductionVarTPL, N, TFL, CEL, CL, SL, RPL);
+}
+
+CXXCompositeExpansionStmt *
+CXXCompositeExpansionStmt::Create(ASTContext &Context, EmptyShell Empty) {
+  return new (Context) CXXCompositeExpansionStmt(Empty);
+}
+
+CXXPackExpansionStmt *
+CXXPackExpansionStmt::Create(
+    ASTContext &Context, DeclStmt *LoopVar, Expr *RangeExpr,
+    TemplateParameterList *InductionVarTPL, std::size_t N,
+    SourceLocation TFL, SourceLocation CEL,
+    SourceLocation CL, SourceLocation RPL) {
+  return new (Context) CXXPackExpansionStmt(
+      LoopVar, RangeExpr, InductionVarTPL, N, TFL, CEL, CL, RPL);
+}
+
+CXXPackExpansionStmt *
+CXXPackExpansionStmt::Create(ASTContext &Context, EmptyShell Empty) {
+  return new (Context) CXXPackExpansionStmt(Empty);
+}
+
+VarDecl *CXXCompositeExpansionStmt::getRangeVariable() {
+  Decl *RV = cast<DeclStmt>(getRangeStmt())->getSingleDecl();
+  assert(RV && "No range variable in CXXExpansionStmt");
+  return cast<VarDecl>(RV);
+}
+
+Expr *CXXPackExpansionStmt::getRangeExpr() const {
+  assert(isa<Expr>(getRangeStmt()) && "Range is not an expression.");
+  Expr *RangeExpr = cast<Expr>(getRangeStmt());
+  return RangeExpr;
 }
 
 CoroutineBodyStmt *CoroutineBodyStmt::Create(

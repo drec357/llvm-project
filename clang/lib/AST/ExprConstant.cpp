@@ -2111,7 +2111,8 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
                                   QualType Type, const APValue &Value,
                                   ConstantExprKind Kind,
                                   SourceLocation SubobjectLoc,
-                                  CheckedTemporaries &CheckedTemps);
+                                  CheckedTemporaries &CheckedTemps,
+                                  bool NonGlobalRefsOkay = false);
 
 /// Check that this reference or pointer core constant expression is a valid
 /// value for an address or reference constant expression. Return true if we
@@ -2119,7 +2120,8 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
 static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
                                           QualType Type, const LValue &LVal,
                                           ConstantExprKind Kind,
-                                          CheckedTemporaries &CheckedTemps) {
+                                          CheckedTemporaries &CheckedTemps,
+                                          bool NonGlobalRefsOkay = false) {
   bool IsReferenceType = Type->isReferenceType();
 
   APValue::LValueBase Base = LVal.getLValueBase();
@@ -2166,7 +2168,7 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
   // Check that the object is a global. Note that the fake 'this' object we
   // manufacture when checking potential constant expressions is conservatively
   // assumed to be global here.
-  if (!IsGlobalLValue(Base)) {
+  if (!IsGlobalLValue(Base) && !NonGlobalRefsOkay) {
     if (Info.getLangOpts().CPlusPlus11) {
       const ValueDecl *VD = Base.dyn_cast<const ValueDecl*>();
       Info.FFDiag(Loc, diag::note_constexpr_non_global, 1)
@@ -2247,7 +2249,8 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
       assert(V && "evasluation result refers to uninitialised temporary");
       if (!CheckEvaluationResult(CheckEvaluationResultKind::ConstantExpression,
                                  Info, MTE->getExprLoc(), TempType, *V,
-                                 Kind, SourceLocation(), CheckedTemps))
+                                 Kind, SourceLocation(), CheckedTemps,
+                                 NonGlobalRefsOkay))
         return false;
     }
   }
@@ -2326,12 +2329,20 @@ static bool CheckLiteralType(EvalInfo &Info, const Expr *E,
   return false;
 }
 
+// FIXME should we be passing NonGlobalRefsOkay to all of the
+// subcalls within this?  Some subset of them are required to
+// get template-for constexpr array expansion to work (e.g.
+// the LValue case), and we could only pass NonGlobalRefsOkay
+// to those and leave the other calls at the default false,
+// but it would be good to consider this in a  about a more general approach,
+// or
 static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
                                   EvalInfo &Info, SourceLocation DiagLoc,
                                   QualType Type, const APValue &Value,
                                   ConstantExprKind Kind,
                                   SourceLocation SubobjectLoc,
-                                  CheckedTemporaries &CheckedTemps) {
+                                  CheckedTemporaries &CheckedTemps,
+                                  bool NonGlobalRefsOkay/*=false*/) {
   if (!Value.hasValue()) {
     Info.FFDiag(DiagLoc, diag::note_constexpr_uninitialized)
       << true << Type;
@@ -2353,20 +2364,20 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
     for (unsigned I = 0, N = Value.getArrayInitializedElts(); I != N; ++I) {
       if (!CheckEvaluationResult(CERK, Info, DiagLoc, EltTy,
                                  Value.getArrayInitializedElt(I), Kind,
-                                 SubobjectLoc, CheckedTemps))
+                                 SubobjectLoc, CheckedTemps, NonGlobalRefsOkay))
         return false;
     }
     if (!Value.hasArrayFiller())
       return true;
     return CheckEvaluationResult(CERK, Info, DiagLoc, EltTy,
                                  Value.getArrayFiller(), Kind, SubobjectLoc,
-                                 CheckedTemps);
+                                 CheckedTemps, NonGlobalRefsOkay);
   }
   if (Value.isUnion() && Value.getUnionField()) {
     return CheckEvaluationResult(
         CERK, Info, DiagLoc, Value.getUnionField()->getType(),
         Value.getUnionValue(), Kind, Value.getUnionField()->getLocation(),
-        CheckedTemps);
+        CheckedTemps, NonGlobalRefsOkay);
   }
   if (Value.isStruct()) {
     RecordDecl *RD = Type->castAs<RecordType>()->getDecl();
@@ -2375,7 +2386,8 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
       for (const CXXBaseSpecifier &BS : CD->bases()) {
         if (!CheckEvaluationResult(CERK, Info, DiagLoc, BS.getType(),
                                    Value.getStructBase(BaseIndex), Kind,
-                                   BS.getBeginLoc(), CheckedTemps))
+                                   BS.getBeginLoc(), CheckedTemps,
+                                   NonGlobalRefsOkay))
           return false;
         ++BaseIndex;
       }
@@ -2386,7 +2398,8 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
 
       if (!CheckEvaluationResult(CERK, Info, DiagLoc, I->getType(),
                                  Value.getStructField(I->getFieldIndex()),
-                                 Kind, I->getLocation(), CheckedTemps))
+                                 Kind, I->getLocation(), CheckedTemps,
+                                 NonGlobalRefsOkay))
         return false;
     }
   }
@@ -2396,7 +2409,7 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
     LValue LVal;
     LVal.setFrom(Info.Ctx, Value);
     return CheckLValueConstantExpression(Info, DiagLoc, Type, LVal, Kind,
-                                         CheckedTemps);
+                                         CheckedTemps, NonGlobalRefsOkay);
   }
 
   if (Value.isMemberPointer() &&
@@ -2412,7 +2425,8 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
 /// check that the expression is of literal type.
 static bool CheckConstantExpression(EvalInfo &Info, SourceLocation DiagLoc,
                                     QualType Type, const APValue &Value,
-                                    ConstantExprKind Kind) {
+                                    ConstantExprKind Kind,
+                                    bool NonGlobalRefsOkay = false) {
   // Nothing to check for a constant expression of type 'cv void'.
   if (Type->isVoidType())
     return true;
@@ -2420,7 +2434,8 @@ static bool CheckConstantExpression(EvalInfo &Info, SourceLocation DiagLoc,
   CheckedTemporaries CheckedTemps;
   return CheckEvaluationResult(CheckEvaluationResultKind::ConstantExpression,
                                Info, DiagLoc, Type, Value, Kind,
-                               SourceLocation(), CheckedTemps);
+                               SourceLocation(), CheckedTemps,
+                               NonGlobalRefsOkay);
 }
 
 /// Check that this evaluated value is fully-initialized and can be loaded by
@@ -3229,6 +3244,10 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       return true;
 
     if (!isa<ParmVarDecl>(VD)) {
+      assert(VD->getName() != "__range" &&
+             "[TemplateFor.Struct] known bug in nested expansions over "
+             "structs with non-constexpr loop vars");
+
       // Assume variables referenced within a lambda's call operator that were
       // not declared within the call operator are captures and during checking
       // of a potential constant expression, assume they are unknown constant
@@ -5386,27 +5405,27 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return Scope.destroy() ? ESR_Succeeded : ESR_Failed;
   }
 
-  case Stmt::CXXTemplateForRangeVarStmtClass: {
-    const CXXTemplateForRangeVarStmt *FS = cast<CXXTemplateForRangeVarStmt>(S);
+  case Stmt::CXXCompositeExpansionStmtClass: {
+    const CXXCompositeExpansionStmt *ES = cast<CXXCompositeExpansionStmt>(S);
     BlockScopeRAII Scope(Info);
 
-    EvalStmtResult ESR = EvaluateStmt(Result, Info, FS->getRangeStmt());
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeStmt());
     if (ESR != ESR_Succeeded)
       return ESR;
 
     // Create the __begin and __end iterators if they exist.
-    if (const Stmt *Begin = FS->getBeginStmt()) {
+    if (const Stmt *Begin = ES->getBeginStmt()) {
       ESR = EvaluateStmt(Result, Info, Begin);
       if (ESR != ESR_Succeeded)
         return ESR;
     }
-    if (const Stmt *End = FS->getEndStmt()) {
+    if (const Stmt *End = ES->getEndStmt()) {
       ESR = EvaluateStmt(Result, Info, End);
       if (ESR != ESR_Succeeded)
         return ESR;
     }
 
-    for (const Stmt *SubStmt : FS->getInstantiatedStatements()) {
+    for (const Stmt *SubStmt : ES->getInstantiatedStatements()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
@@ -5417,8 +5436,8 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
-  case Stmt::CXXTemplateForRangePackStmtClass: {
-    const CXXTemplateForRangePackStmt *FS = cast<CXXTemplateForRangePackStmt>(S);
+  case Stmt::CXXPackExpansionStmtClass: {
+    const CXXPackExpansionStmt *ES = cast<CXXPackExpansionStmt>(S);
     BlockScopeRAII Scope(Info);
 
     EvalStmtResult ESR;
@@ -5426,10 +5445,10 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     // either a FunctionParmPackExpr or SubstNonTypeTemplateParmExpr which
     // cannot be evaluated, and in any case we have already used them to
     // find the necessary substitute DeclRefs and instantiate them throughout
-    // the body via BuiltinSelectPackElemExprs, so that will not be referenced
+    // the body via CXXSelectPackElemExprs, so that will not be referenced
     // during evaluation of the instantiated bodies.
 
-    for (Stmt *SubStmt : FS->getInstantiatedStatements()) {
+    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
@@ -8129,8 +8148,8 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
-  bool VisitBuiltinSelectMemberExpr(const BuiltinSelectMemberExpr *E);
-  bool VisitBuiltinSelectPackElemExpr(const BuiltinSelectPackElemExpr *E);
+  bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
+  bool VisitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -8438,13 +8457,13 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 }
 
 bool
-LValueExprEvaluator::VisitBuiltinSelectMemberExpr(
-                                           const BuiltinSelectMemberExpr *E) {
+LValueExprEvaluator::VisitCXXSelectMemberExpr(
+                                           const CXXSelectMemberExpr *E) {
   return VisitMemberExpr(E->getSubstituteExpr());
 }
 
-bool LValueExprEvaluator::VisitBuiltinSelectPackElemExpr(
-                                         const BuiltinSelectPackElemExpr *E) {
+bool LValueExprEvaluator::VisitCXXSelectPackElemExpr(
+                                         const CXXSelectPackElemExpr *E) {
   return VisitDeclRefExpr(E->getSubstituteExpr());
 }
 
@@ -14984,7 +15003,8 @@ bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
       llvm_unreachable("Unhandled cleanup; missing full expression marker?");
   }
   return CheckConstantExpression(Info, DeclLoc, DeclTy, Value,
-                                 ConstantExprKind::Normal) &&
+                                 ConstantExprKind::Normal,
+                                 VD->getNonGlobalRefsInConstInitOkay()) &&
          CheckMemoryLeaks(Info);
 }
 
@@ -15242,10 +15262,10 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     return ICEDiag(IK_NotICE, E->getBeginLoc());
   }
 
-  case Expr::BuiltinSelectMemberExprClass:
-  case Expr::BuiltinSelectPackElemExprClass:
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackElemExprClass:
     // This is an ICE if its range expression is an ICE.
-    return CheckICE(cast<BuiltinSelectExpr>(E)->getRangeExpr(), Ctx);
+    return CheckICE(cast<CXXSelectExpr>(E)->getRangeExpr(), Ctx);
 
   case Expr::SizeOfPackExprClass:
   case Expr::GNUNullExprClass:

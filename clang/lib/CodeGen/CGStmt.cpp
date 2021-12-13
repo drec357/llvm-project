@@ -194,11 +194,11 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   case Stmt::CXXForRangeStmtClass:
     EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S), Attrs);
     break;
-  case Stmt::CXXTemplateForRangePackStmtClass:
-    EmitCXXTemplateForRangePackStmt(cast<CXXTemplateForRangePackStmt>(*S));
+  case Stmt::CXXPackExpansionStmtClass:
+    EmitCXXPackExpansionStmt(cast<CXXPackExpansionStmt>(*S));
     break;
-  case Stmt::CXXTemplateForRangeVarStmtClass:
-    EmitCXXTemplateForRangeVarStmt(cast<CXXTemplateForRangeVarStmt>(*S));
+  case Stmt::CXXCompositeExpansionStmtClass:
+    EmitCXXCompositeExpansionStmt(cast<CXXCompositeExpansionStmt>(*S));
     break;
   case Stmt::SEHTryStmtClass:
     EmitSEHTryStmt(cast<SEHTryStmt>(*S));
@@ -1174,8 +1174,8 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 }
 
 void
-CodeGenFunction::EmitCXXTemplateForRangeVarStmt(
-  const CXXTemplateForRangeVarStmt &S, ArrayRef<const Attr *> ForAttrs) {
+CodeGenFunction::EmitCXXCompositeExpansionStmt(
+  const CXXCompositeExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
   JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
 
   // Create a basic block for each instantiation.
@@ -1204,8 +1204,8 @@ CodeGenFunction::EmitCXXTemplateForRangeVarStmt(
 }
 
 void
-CodeGenFunction::EmitCXXTemplateForRangePackStmt(
-    const CXXTemplateForRangePackStmt &S, ArrayRef<const Attr *> ForAttrs) {
+CodeGenFunction::EmitCXXPackExpansionStmt(
+    const CXXPackExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
   JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
 
   // Create a basic block for each instantiation.

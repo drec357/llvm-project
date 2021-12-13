@@ -373,8 +373,8 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   PrintControlledStmt(Node->getBody());
 }
 
-void StmtPrinter::VisitCXXTemplateForRangeVarStmt(
-                                              CXXTemplateForRangeVarStmt *Node) {
+void StmtPrinter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *Node) {
   Indent() << "template for (";
   PrintingPolicy SubPolicy(Policy);
   SubPolicy.SuppressInitializers = true;
@@ -392,8 +392,8 @@ void StmtPrinter::VisitCXXTemplateForRangeVarStmt(
     OS << "\n";
 }
 
-void StmtPrinter::VisitCXXTemplateForRangePackStmt(
-                                      CXXTemplateForRangePackStmt *Node) {
+void StmtPrinter::VisitCXXPackExpansionStmt(
+                                      CXXPackExpansionStmt *Node) {
   Indent() << "template for (";
   PrintingPolicy SubPolicy(Policy);
   SubPolicy.SuppressInitializers = true;
@@ -1436,7 +1436,7 @@ void StmtPrinter::VisitOMPIteratorExpr(OMPIteratorExpr *Node) {
   OS << ")";
 }
 
-void StmtPrinter::VisitBuiltinSelectMemberExpr(BuiltinSelectMemberExpr *E) {
+void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   OS << "__select(";
   PrintExpr(E->getRangeExpr());
   OS << ", ";
@@ -1444,7 +1444,7 @@ void StmtPrinter::VisitBuiltinSelectMemberExpr(BuiltinSelectMemberExpr *E) {
   OS << ")";
 }
 
-void StmtPrinter::VisitBuiltinSelectPackElemExpr(BuiltinSelectPackElemExpr *E) {
+void StmtPrinter::VisitCXXSelectPackElemExpr(CXXSelectPackElemExpr *E) {
   OS << "__select(";
   PrintExpr(E->getRangeExpr());
   OS << ", ";
