@@ -1,4 +1,7 @@
-#include <cassert>
+// RUN: %clang_cc1 -std=c++2a -fstring-injection -verify %s
+// expected-no-diagnostics
+
+#define assert(expr) ((expr) ? (void)(0) : __builtin_abort())
 
 static_assert(__has_extension(string_injection),
     "Pass -fstring-injection to compiler");
@@ -17,7 +20,7 @@ consteval {
   __inj("//does nothing");
 
   __injf("//single arg to injf okay");
-//  __inj("int k = ", fiveB, ";"); //ERROR
+//  __inj("int k = ", fiveB, ";"); //ERROR (DWR TODO turn these into exp error tests...)
 //  __inj("int k = ", fiveC, ";"); //ERROR
 //  __inj("void f() {}>"); //ERROR
 //  __inj("void f() {}]"); //ERROR
