@@ -1774,8 +1774,10 @@ void TextNodeDumper::VisitVarDecl(const VarDecl *D) {
       OS << " listinit";
       break;
     }
-    if (D->getNonGlobalRefsInConstInitOkay())
-      OS << " refptr-init-ok";
+    if (D->isImplicitExpansionRangeVar())
+      OS << " imprange";
+    if (D->isImplicitExpansionLoopVar())
+      OS << " imploop";
   }
   if (D->needsDestruction(D->getASTContext()))
     OS << " destroyed";

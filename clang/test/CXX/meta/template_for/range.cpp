@@ -82,6 +82,8 @@ struct RangeTestA {
     template for (constexpr int n : ints) {
       template for (constexpr int n : ints)
         ++i;
+      template for (constexpr int n2 : ints)
+        ;
     }
     return i;
   }

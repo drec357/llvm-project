@@ -196,10 +196,8 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
     EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S), Attrs);
     break;
   case Stmt::CXXPackExpansionStmtClass:
-    EmitCXXPackExpansionStmt(cast<CXXPackExpansionStmt>(*S));
-    break;
   case Stmt::CXXCompositeExpansionStmtClass:
-    EmitCXXCompositeExpansionStmt(cast<CXXCompositeExpansionStmt>(*S));
+    EmitCXXExpansionStmt(cast<CXXExpansionStmt>(*S), Attrs);
     break;
   case Stmt::SEHTryStmtClass:
     EmitSEHTryStmt(cast<SEHTryStmt>(*S));
@@ -1175,56 +1173,39 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 }
 
 void
-CodeGenFunction::EmitCXXCompositeExpansionStmt(
-  const CXXCompositeExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
+CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
+                                      ArrayRef<const Attr *> ForAttrs) {
+  if (!ForAttrs.empty())
+    llvm::errs() << "WARNING: Attributes ignored on template for";
+
+  assert(S.getNumInstantiatedStmts() == S.getInstantiatedStmts().size() &&
+         "These should not be different at this point");
+
+  if (!S.getNumInstantiatedStmts())
+    return;
+
   JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
 
   // Create a basic block for each instantiation.
   llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
-  for (std::size_t I = 0; I < S.getNumInstantiatedStatements(); ++I)
+  for (std::size_t I = 0; I < S.getNumInstantiatedStmts(); ++I)
     Blocks.push_back(createBasicBlock("expand.body"));
   Blocks.push_back(LoopExit.getBlock());
 
   LexicalScope ForScope(*this, S.getSourceRange());
 
-  // Evaluate the first pieces before the loop.
-  // There is no range variable for pack expansions.
-  EmitStmt(S.getRangeStmt());
+  if (auto *CES = dyn_cast<CXXCompositeExpansionStmt>(&S))
+    EmitStmt(CES->getRangeStmt());
 
-  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
-  for (std::size_t I = 0; I < S.getNumInstantiatedStatements(); ++I) {
+  // Emit the {LoopVarStmt, Body} instantiations
+  // DWR FIXME handle continue, break statements
+  ArrayRef<Stmt *> Insts = S.getInstantiatedStmts();
+  for (std::size_t I = 0; I < S.getNumInstantiatedStmts(); ++I) {
     LexicalScope BodyScope(*this, S.getSourceRange());
     BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
     BreakContinueStack.push_back(BC);
     EmitBlock(Blocks[I]);
-    EmitStmt(Stmts[I]);
-    BreakContinueStack.pop_back();
-  }
-
-  EmitBlock(LoopExit.getBlock(), true);
-}
-
-void
-CodeGenFunction::EmitCXXPackExpansionStmt(
-    const CXXPackExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
-  JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
-
-  // Create a basic block for each instantiation.
-  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
-  for (std::size_t I = 0; I < S.getNumInstantiatedStatements(); ++I)
-    Blocks.push_back(createBasicBlock("expand.body"));
-  Blocks.push_back(LoopExit.getBlock());
-
-  LexicalScope ForScope(*this, S.getSourceRange());
-
-  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
-  for (std::size_t I = 0; I < S.getNumInstantiatedStatements(); ++I) {
-    LexicalScope BodyScope(*this, S.getSourceRange());
-    BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
-    BreakContinueStack.push_back(BC);
-    EmitBlock(Blocks[I]);
-
-    EmitStmt(Stmts[I]);
+    EmitStmt(Insts[I]);
     BreakContinueStack.pop_back();
   }
 

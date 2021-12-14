@@ -3308,10 +3308,9 @@ public:
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
-  void EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
-                                       ArrayRef<const Attr *> Attrs = None);
-  void EmitCXXCompositeExpansionStmt(const CXXCompositeExpansionStmt &S,
-                                      ArrayRef<const Attr *> Attrs = None);
+
+  void EmitCXXExpansionStmt(const CXXExpansionStmt &S,
+                            ArrayRef<const Attr *> Attrs = None);
 
   /// Controls insertion of cancellation exit blocks in worksharing constructs.
   class OMPCancelStackRAII {
@@ -4655,7 +4654,14 @@ private:
 
   /// Set the address of a local variable.
   void setAddrOfLocalVar(const VarDecl *VD, Address Addr) {
-    assert(!LocalDeclMap.count(VD) && "Decl already exists in LocalDeclMap!");
+    // [TemplateFor] Hack: in nested expansion statements, range
+    // and loop variables can sometimes be re-emitted; it is tricky
+    // to isolate exactly when, so we will just allow the map insertion
+    // to not take place here.
+    assert(!LocalDeclMap.count(VD)
+           || VD->isImplicitExpansionRangeVar()
+           || VD->isImplicitExpansionLoopVar()
+           && "Decl already exists in LocalDeclMap!");
     LocalDeclMap.insert({VD, Addr});
   }
 

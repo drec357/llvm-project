@@ -324,6 +324,9 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseConceptReference(const ConceptReference &C);
 
+  /// Recursively visit a `template for` statement
+  bool TraverseCXXExpansionStmt(CXXExpansionStmt *S,
+                                DataRecursionQueue *Queue = nullptr);
   // ---- Methods on Attrs ----
 
   // Visit an attribute.
@@ -2328,24 +2331,39 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
-DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseCXXExpansionStmt(
+    CXXExpansionStmt *S, DataRecursionQueue *Queue) {
   if (!getDerived().shouldVisitImplicitCode()) {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
-    // Visit everything else only if shouldVisitImplicitCode().
+  } else
+    TRY_TO(TraverseTemplateParameterListHelper(S->getInductionVarTPL()));
+
+  if (getDerived().shouldVisitTemplateInstantiations())
+    for (Stmt *Inst : S->getInstantiatedStmts())
+      TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(Inst);
+
+  return true;
+}
+
+DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
+  if (getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBeginStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getEndStmt());
+  } else {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeInit());
     ShouldVisitChildren = false;
   }
+  TRY_TO(TraverseCXXExpansionStmt(S, Queue));
 })
 
 DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
   if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
-    // Visit everything else only if shouldVisitImplicitCode().
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeExpr());
     ShouldVisitChildren = false;
   }
+  TRY_TO(TraverseCXXExpansionStmt(S, Queue));
 })
 
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {

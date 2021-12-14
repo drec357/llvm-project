@@ -718,6 +718,8 @@ public:
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
+  StmtResult TransformInstantiatedCXXExpansionStmt(CXXExpansionStmt *S);
+
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
 #define STMT(Node, Parent)                        \
@@ -2449,6 +2451,29 @@ public:
                                            RangeExpr, RParenLoc,
                                            Sema::BFRK_Rebuild,
                                            ConstexprLoc.isValid());
+  }
+
+  StmtResult RebuildInstantiatedCXXExpansionStmt(CXXExpansionStmt *OldS,
+                                                 Stmt *NewBody,
+                                                 ArrayRef<Stmt *> NewInsts) {
+    switch (OldS->getStmtClass()) {
+    case Stmt::CXXCompositeExpansionStmtClass:
+      return CXXCompositeExpansionStmt::Create(
+          SemaRef.Context, OldS->getLoopVarStmt(),
+          cast<CXXCompositeExpansionStmt>(OldS)->getRangeStmt(),
+          OldS->getInductionVarTPL(), OldS->getTemplateForLoc(),
+          OldS->getConstexprLoc(), OldS->getColonLoc(), OldS->getStructLoc(),
+          OldS->getRParenLoc(), NewBody, NewInsts);
+    case Stmt::CXXPackExpansionStmtClass:
+      return CXXPackExpansionStmt::Create(
+          SemaRef.Context, OldS->getLoopVarStmt(),
+          cast<CXXPackExpansionStmt>(OldS)->getRangeExpr(),
+          OldS->getInductionVarTPL(), OldS->getTemplateForLoc(),
+          OldS->getConstexprLoc(), OldS->getColonLoc(),
+          OldS->getRParenLoc(), NewBody, NewInsts);
+    default:
+      llvm_unreachable("Unhandled CXXExpansionStmt subclass");
+    }
   }
 
   /// Build a new C++0x range-based for statement.
@@ -8438,10 +8463,61 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
 }
 
+/// This helps us deal with transformations of CXXExpansionStmts which
+/// have already been expanded, which tells us:
+///   1. We are probably in a nested expansion, and
+///   2. The RangeVar/RangeExpr and LoopVar are non-dependent, but
+///   3. The instantiated statements may or may not be dependent.
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
+                                                         CXXExpansionStmt *S) {
+  assert(!getDerived().AlwaysRebuild() && "This not do a full rebuild");
+
+  // Transform the (always-dependent) getBody() expression, whence the
+  // instantiations arose.  While this new body is not necessary to
+  // re-instantiate the instantiations -- they can be individually
+  // transformed at this point -- at least transforming it can tell us whether
+  // we need to transform the instantiations again.
+  StmtResult NewBody = getDerived().TransformStmt(S->getBody());
+  if (NewBody.isInvalid())
+    return StmtError();
+  if (NewBody.get() == S->getBody()) {
+    // The body is unchanged by transformation,
+    // meaning its instantiations should be unchanged as well.
+    // We can simply return the old node.
+    return S;
+  }
+
+  // The dependent body was changed during transformation, which means
+  // the instantiations should as well.
+  size_t N = S->getNumInstantiatedStmts();
+  auto OldInstsArr = S->getInstantiatedStmts();
+  assert(N == OldInstsArr.size());
+  Stmt **NewInstantiations = new (SemaRef.Context) Stmt *[N];
+  for (std::size_t I = 0; I < N; ++I) {
+    StmtResult SR = getDerived().TransformStmt(OldInstsArr[I]);
+    if (SR.isInvalid())
+      return StmtError();
+    assert(NewInstantiations[I] != SR.get() &&
+           "Expcted this would transform given that the dependent body did");
+    NewInstantiations[I] = SR.get();
+  }
+
+  // Dispatch to the appropriate Create function
+  return getDerived().
+      RebuildInstantiatedCXXExpansionStmt(S, NewBody.get(),
+                                          { NewInstantiations, N });
+}
+
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(
                                               CXXPackExpansionStmt *S) {
+  // If this is a nested expansion, it needs special handling:
+  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
+    return TransformInstantiatedCXXExpansionStmt(S);
+
   ExprResult RangeExpr;
   RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
   if (RangeExpr.isInvalid())
@@ -8488,6 +8564,10 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::
 TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
+  // If this is a nested expansion, it needs special handling:
+  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
+    return TransformInstantiatedCXXExpansionStmt(S);
+
   StmtResult RangeVar = getDerived().TransformStmt(S->getRangeStmt());
   if (RangeVar.isInvalid())
     return StmtError();
