@@ -3,7 +3,7 @@
 
 #define assert(expr) ((expr) ? (void)(0) : __builtin_abort())
 
-constexpr int test0() {
+constexpr int simpletest0() {
   int i = 0;
   int arr[] = {};
   template for (int elem : arr) {
@@ -11,21 +11,21 @@ constexpr int test0() {
   }
   return i;
 }
-static_assert(test0() == 0);
+static_assert(simpletest0() == 0);
 
-constexpr int test1() {
+constexpr int simpletest1() {
   int i = 0;
   int arr[] = {1, 2, 3};
   template for (int elem : arr)
     i += elem;
   return i;
 }
-static_assert(test1() == 6);
+static_assert(simpletest1() == 6);
 
 
 constexpr bool canTakeAddressOf_YesRefElem_NoValElem() {
   int arr[] = {1, 2, 3};
-  int *ptrToRefElem, *ptrToValElem;
+  int *ptrToRefElem = nullptr, *ptrToValElem = nullptr;
   template for (int &refElem : arr) {
     ptrToRefElem = &refElem;
   }
@@ -42,7 +42,7 @@ static_assert(canTakeAddressOf_YesRefElem_NoValElem());
 
 constexpr bool illegal_address_if_constexpr() {
   constexpr int arr[] = {1, 2, 3};
-  const int *ptr, *ptrB;
+  const int *ptr = nullptr, *ptrB = nullptr;
 //  template for (constexpr int &elem : arr) ; //Expected error
   template for (constexpr int elem : arr)
     ptrB = &elem;
@@ -53,53 +53,55 @@ constexpr bool illegal_address_if_constexpr() {
 static_assert(illegal_address_if_constexpr());
 
 
-//constexpr int test1() {
-//  int i = 0, dummy = 0;
-//  int arr[] = {1, 2, 3};
-//  int arrB[] = {1};
-//
-//  template for (int elem : arr) {
-//    int j = 0;
-//    template for (int elem : arrB) //FIXME (index issues)
-//      i += elem;
-//    template for (int elem : arrB) { //FIXME (index issues)
-//      dummy += (j + i);
-//      template for (int elem : arr)
-//        dummy += (j + i);
-//    }
-//  }
-//  return 0;
-//}
-//static_assert(test1() == 3);
+constexpr int test1() {
+  int i = 0, dummy = 0;
+  int arr[] = {1, 2, 3};
+  int arrB[] = {1};
+
+  template for (int elem : arr) {
+    int j = 0;
+    template for (int elem : arrB)
+      i += elem;
+    template for (int elem : arrB) {
+      dummy += (j + i);
+      template for (int elem : arr)
+        dummy += (j + i);
+    }
+  }
+  return i;
+}
+static_assert(test1() == 3);
 
 
-//constexpr int nested_index_test_nonconstexpr() {
-//  int num = 0, asum = 0;
-//  int arr[] = {1, 2, 3};
-//  int arrB[] = {1};
-//  template for (int a : arr) {
-//    template for (int b : arrB) { //WARNING (BAD): index issues
-//      ++num;
-//      asum += a;
-//    }
-//  }
-//  return num + asum;
-//}
-//static_assert(nested_index_test_nonconstexpr() == 9);
+constexpr int nested_index_test_nonconstexpr() {
+  int num = 0, asum = 0;
+  int arr[] = {1, 2, 3};
+  int arrB[] = {1};
+  template for (int a : arr) {
+    template for (int b : arrB) {
+      ++num;
+      asum += a;
+    }
+  }
+  return num + asum;
+}
+static_assert(nested_index_test_nonconstexpr() == 9);
 
-//constexpr int nested_index_test_constexpr() {
-//  int num = 0, asum = 0;
-//  constexpr int arr[] = {1, 2, 3};
-//  constexpr int arrB[] = {1};
-//  template for (constexpr int a : arr) {
-//    template for (constexpr int b : arrB) { //ERROR index issues
-//      ++num;
-//      asum += a;
-//    }
-//  }
-//  return num + asum;
-//}
-//static_assert(nested_index_test_constexpr() == 9);
+constexpr int nested_index_test_constexpr() {
+  int num = 0, asum = 0;
+  constexpr int arr[] = {1, 2, 3};
+  constexpr int arrB[] = {1};
+  template for (constexpr int a : arr) {
+    int j = a;
+    template for (constexpr int b : arrB) {
+      ++num;
+      asum += a;
+    }
+    int k = a;
+  }
+  return num;
+}
+static_assert(nested_index_test_constexpr() == 3);
 
 constexpr int misc_array_types() {
   int i = 1;
@@ -131,16 +133,16 @@ constexpr int test_constexpr_global_array_1() {
 }
 static_assert(test_constexpr_global_array_1() == 12);
 
-//constexpr int global_arr2[] = {1, 2};
-//constexpr int test_constexpr_global_array_2() {
-//  int res = 0;
-//  template for (constexpr int a : global_arr3) {
-//    template for (constexpr int b : global_arr2) //FIXME (index issues)
-//      res += (a + b);
-//  }
-//  return res;
-//}
-//static_assert(test_constexpr_global_array_2() == 33);
+constexpr int global_arr2[] = {1, 2};
+constexpr int test_constexpr_global_array_2() {
+  int res = 0;
+  template for (constexpr int a : global_arr3) {
+    template for (constexpr int b : global_arr2)
+      res += (a + b);
+  }
+  return res;
+}
+static_assert(test_constexpr_global_array_2() == 33);
 
 template<int I>
 struct MyStruct {
@@ -160,22 +162,64 @@ struct MyStruct {
 template<int I>
 int MyStruct<I>::K = 1;
 
-//FIXME NEED MORE TESTS USING CONSTEXPR ARRAYS
-// This one is important, required special changes to constexpr checking
-// (search NonGlobalRefs, VarDecl::setNonGlobalRefsInConstInitOkay() etc);
-// need to make sure doing that doesn't break anything.
+
+// FIXME more tests using constexpr arrays
+//
+// This test is important, as a special change was required to make it work.
+// Search "NonGlobalRefs" in clang, anything added there was needed to allow
+// constexpr to be added without an error (due to the arrays being interpreted
+// as pointers)
+//
+// Also, it is important to have a non-constexpr function compilatio tests
+// to make sure CodeGen works, since some unusual stuff is required there
+// as well, particularly in the case of nested expansions, which this test
+// handles as well.
+//
+// FIXME break this into separate tests
 int test_constexpr_array() {
   int i = 0;
   constexpr int arr4[] = { 1, 2, 3, 4 };
   constexpr int arr2[] = { 2, 4 };
+  constexpr int arr1[] = { 2 };
+  constexpr int arr0[] = {};
+
+  // Zero-length arrays
+  template for (constexpr int elem : arr0)
+    ++i;
+  template for (constexpr int elem : arr0) {
+    template for (constexpr int elem : arr0) {
+      ++i;
+      template for (constexpr int elem : arr4)
+        ;
+    }
+  }
+
+  // Null statement bodies
+  template for (constexpr int elem : arr0)
+    ;
+  template for (constexpr int elem : arr4)
+    ;
+  template for (constexpr int elem : arr4) {
+    // IMPORTANT TEST: *Nested* expansion with null body; CodeGen
+    // needs to handle this case specially to avoid an assert fail.
+    template for (constexpr int elem : arr2)
+      ;
+  }
+
+  // Body which is type-dependent on loop variables
   template for (constexpr int elem : arr4)
     i += elem;
   template for (constexpr int a : arr4) {
-    int j;
+    int j = 0, i = 0;
+    template for (constexpr int b1 : arr1) {
+      j += i;
+      int localvar = 3;
+      constexpr int localvarB = 4;
+      j += localvar + localvarB;
+    }
     template for (constexpr int b : arr4) {
       MyStruct<a + b> m;
-      j += m.get() + i + m.getB() + m.getC()
-          + m.j + m.K + m.L;
+      j += m.get() + i + m.getB() + m.getC() + m.j + m.K + m.L;
       constexpr MyStruct<a + b> mconst;
       template for (constexpr int elem : mconst.get_member_arr4_static())
         ;
@@ -185,8 +229,13 @@ int test_constexpr_array() {
       template for (int elem : mconst.get_member_arr4_nonstatic())
         ;
     }
-//    template for (constexpr int c : arr2) //FIXME (index issues)
-//      ;
+    template for (constexpr int c : arr2)
+      ++i;
+    template for (constexpr int c : arr2)
+      int k = i;
+
+    template for (constexpr int c : arr2)
+      ;
   }
   return i;
 }

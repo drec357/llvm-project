@@ -1703,7 +1703,7 @@ void ASTStmtReader::VisitCXXExpansionStmt(
   S->ColonLoc = readSourceLocation();
   S->StructLoc = readSourceLocation();
   S->RParenLoc = readSourceLocation();
-  S->InductionVarTPL = Record.readTemplateParameterList();
+  S->setInductionVarTPL(Record.readTemplateParameterList());
   S->setLoopVarStmt(Record.readSubStmt());
   S->setBody(Record.readSubStmt());
 }
@@ -1719,7 +1719,7 @@ void ASTStmtReader::VisitCXXCompositeExpansionStmt(
 void ASTStmtReader::VisitCXXPackExpansionStmt(
                                              CXXPackExpansionStmt *S) {
   VisitCXXExpansionStmt(S);
-  S->setRangeExprStmt(Record.readSubStmt());
+  S->setRangePackExpr(Record.readExpr());
 }
 
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {

@@ -5324,8 +5324,15 @@ void Sema::InstantiateVariableInitializer(
         // Do not dynamically initialize dllimport variables.
       } else if (InitExpr) {
         bool DirectInit = OldVar->isDirectInit();
-        if (OldVar->getNonGlobalRefsInConstInitOkay())
-          Var->setNonGlobalRefsInConstInitOkay();
+
+        // While we have the old variable, and since implicit range/loop variables
+        // always have initializers and so always pass through here,
+        // pass these settings to the new variable:
+        if (OldVar->isImplicitExpansionRangeVar())
+          Var->setIsImplicitExpansionRangeVar();
+        if (OldVar->isImplicitExpansionLoopVar())
+          Var->setIsImplicitExpansionLoopVar();
+
         AddInitializerToDecl(Var, InitExpr, DirectInit);
       } else
         ActOnUninitializedDecl(Var);
@@ -5986,8 +5993,10 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
                           bool FindingInstantiatedContext) {
   DeclContext *ParentDC = D->getDeclContext();
   // Determine whether our parent context depends on any of the template
-  // arguments we're currently substituting.  Expansion statements may live
-  // in non-dependent function bodies, and so require special handling.
+  // arguments we're currently substituting.
+  // Expansion statements are essentially a templated statement in a function
+  // body, and that function may be non-dependent, and so we must
+  // handle that as a dependent parent too.
   bool ParentDependsOnArgs = isDependentContextAtLevel(
       ParentDC, TemplateArgs.getNumRetainedOuterLevels()) ||
       (CurrentInstantiationScope &&

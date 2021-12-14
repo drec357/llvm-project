@@ -5425,12 +5425,13 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
         return ESR;
     }
 
-    for (const Stmt *SubStmt : ES->getInstantiatedStatements()) {
+    for (const Stmt *SubStmt : ES->getInstantiatedStmts()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
       if (ESR != ESR_Succeeded)
         return ESR;
+      // DWR FIXME: handle continue, break statements
     }
 
     return ESR_Succeeded;
@@ -5441,14 +5442,14 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     BlockScopeRAII Scope(Info);
 
     EvalStmtResult ESR;
-    // We do not need nor want to evaluate FS->getRangeStmt(), as that is
+    // We do not need nor want to evaluate ES->getRangeExpr(), as that is
     // either a FunctionParmPackExpr or SubstNonTypeTemplateParmExpr which
     // cannot be evaluated, and in any case we have already used them to
     // find the necessary substitute DeclRefs and instantiate them throughout
     // the body via CXXSelectPackElemExprs, so that will not be referenced
     // during evaluation of the instantiated bodies.
 
-    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+    for (const Stmt *SubStmt : ES->getInstantiatedStmts()) {
       BlockScopeRAII InnerScope(Info);
 
       ESR = EvaluateStmt(Result, Info, SubStmt);
@@ -15002,9 +15003,36 @@ bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
     if (!Info.discardCleanups())
       llvm_unreachable("Unhandled cleanup; missing full expression marker?");
   }
+
+  // [TemplateFor.Array]
+  // Generally this should be invalid:
+  //
+  //     constexpr int a = 1;
+  //     constexpr const int *p = &a;
+  //
+  // because the address of 'a' is not constant.
+  // But if  we encounter this:
+  //
+  //     constexpr int arr[] = { 1, 2, 3, 4 };
+  //     template for (constexpr int elem : arr) {}
+  //
+  // we we want to allow the implicit __range variable to refer to arr, as the
+  // instantiated code will not use the range but rather create implicit
+  //
+  //     constexpr int elem = __range[I]; //= arr[I]
+  //
+  // declarations, which are permissible.
+  bool NonGlobalRefsOkay = false;
+  if (VD->isImplicitExpansionRangeVar() &&
+      VD->isConstexpr() &&
+      (DeclTy->isPointerType() || DeclTy->isReferenceType()) &&
+      Ctx.getAsConstantArrayType(
+            this->IgnoreImpCasts()->getType()))
+    NonGlobalRefsOkay = true;
+
   return CheckConstantExpression(Info, DeclLoc, DeclTy, Value,
                                  ConstantExprKind::Normal,
-                                 VD->getNonGlobalRefsInConstInitOkay()) &&
+                                 NonGlobalRefsOkay) &&
          CheckMemoryLeaks(Info);
 }
 

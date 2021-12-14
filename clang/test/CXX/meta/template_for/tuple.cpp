@@ -7,7 +7,7 @@ static_assert(__has_extension(template_for), "");
 
 // --- Dummy tuple setup --- //
 // Overload std::get and specialize std::tuple_size
-// for our class to be considered a mytuple.
+// for the compiler to see the class as tuple-like.
 template<typename T, typename U, typename V>
 struct mytuple
 {

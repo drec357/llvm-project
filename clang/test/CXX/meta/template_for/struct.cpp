@@ -30,16 +30,13 @@ constexpr int test_struct() {
   }
   int i = 0;
   template for (auto x : struct s) {
-    //FIXME: nested expansions crash, unless constexpr, and weird things
-    // happen with the index
-//    template for (auto y : struct s2) {
-//      f += x;
-//      f += y;
-//      ++i;
-//    }
-//    template for (auto y : struct s) {
-//;
-//    }
+    template for (auto y : struct s2) {
+      f += x;
+      f += y;
+      ++i;
+    }
+    template for (auto y : struct s)
+      ;
   }
   return res;
 }

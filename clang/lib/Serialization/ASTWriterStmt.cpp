@@ -1596,14 +1596,14 @@ void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
   Record.AddStmt(S->getRangeStmt());
   Record.AddStmt(S->getBeginStmt());
   Record.AddStmt(S->getEndStmt());
-  Code = serialization::STMT_CXX_PACK_EXPANSION;
+  Code = serialization::STMT_CXX_COMP_EXPANSION;
 }
 
 void ASTStmtWriter::VisitCXXPackExpansionStmt(
                                              CXXPackExpansionStmt *S) {
   VisitCXXExpansionStmt(S);
-  Record.AddStmt(S->getRangeStmt());
-  Code = serialization::STMT_CXX_COMP_EXPANSION;
+  Record.AddStmt(S->getRangeExpr());
+  Code = serialization::STMT_CXX_PACK_EXPANSION;
 }
 
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
