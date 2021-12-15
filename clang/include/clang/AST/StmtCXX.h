@@ -245,15 +245,15 @@ class CXXExpansionStmt : public Stmt {
   };
   Stmt *SubExprs[END];
 
-  /// The template parameter list which stores the induction variable
-  /// used to form the dependent structure of the loop body.
-  TemplateParameterList *InductionVarTPL;
-
   SourceLocation TemplateForLoc;
   SourceLocation ConstexprLoc;
   SourceLocation ColonLoc;
   SourceLocation StructLoc;
   SourceLocation RParenLoc;
+
+  /// The template parameter list which stores the induction variable
+  /// used to form the dependent structure of the loop body.
+  TemplateParameterList *InductionVarTPL;
 
   /// The expansion size of the range. When the range is dependent
   /// this value is not meaningful.
@@ -271,15 +271,7 @@ protected:
                    SourceLocation TFL, SourceLocation CEL,
                    SourceLocation CL, SourceLocation SL,
                    SourceLocation RPL, Stmt *RangeStmt = nullptr,
-                   Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {})
-    : Stmt(SC), TemplateForLoc(TFL), ConstexprLoc(CEL),
-      ColonLoc(CL), StructLoc(SL), RParenLoc(RPL),
-      NumInstantiatedStmts(Insts.size()),
-      InstantiatedStmts(const_cast<Stmt **>(Insts.data())) {
-    SubExprs[LOOP] = LoopVar;
-    SubExprs[RANGE] = RangeStmt;
-    SubExprs[BODY] = Body;
-  }
+                   Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {});
 
   CXXExpansionStmt(StmtClass SC, EmptyShell Empty)
     : Stmt(SC, Empty) {}

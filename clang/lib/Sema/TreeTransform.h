@@ -718,6 +718,11 @@ public:
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
   StmtResult TransformInstantiatedCXXExpansionStmt(CXXExpansionStmt *S);
+  StmtResult
+  TransformInstantiatedCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S,
+                                                 Stmt *RangeVarDS,
+                                                 Stmt *BeginVarDS,
+                                                 Stmt *EndVarDS);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -8374,7 +8379,9 @@ TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
   // instantiations arose.  While this new body is not necessary to
   // re-instantiate the instantiations -- they can be individually
   // transformed at this point -- at least transforming it can tell us whether
-  // we need to transform the instantiations again.
+  // we need to transform the instantiations again, and provides the
+  // AST node with nice generalized information which may be useful
+  // (e.g. in statement printing).
   StmtResult NewBody = getDerived().TransformStmt(S->getBody());
   if (NewBody.isInvalid())
     return StmtError();
@@ -8410,9 +8417,11 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(
                                               CXXPackExpansionStmt *S) {
-  // If this is a nested expansion, it needs special handling:
+  // If the bodies have already been instantiated (e.g. this is a nested
+  // expansion, or had been nondependent in a dependent context which is now
+  // being instantiated), this needs special handling:
   if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
-    return TransformInstantiatedCXXExpansionStmt(S);
+    return getDerived().TransformInstantiatedCXXExpansionStmt(S);
 
   ExprResult RangeExpr;
   RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
@@ -8420,16 +8429,16 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
     return StmtError();
 
   // FIXME: Is this actually an evaluated expression.
-  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid())
+  StmtResult LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVarDS.isInvalid())
     return StmtError();
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      LoopVar.get() != S->getLoopVarStmt()) {
+      LoopVarDS.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+      RangeExpr.get(), LoopVarDS.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8444,7 +8453,7 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+      RangeExpr.get(), LoopVarDS.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8460,26 +8469,88 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::
 TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
-  // If this is a nested expansion, it needs special handling:
-  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
-    return TransformInstantiatedCXXExpansionStmt(S);
 
-  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeStmt());
-  if (RangeVar.isInvalid())
+  StmtResult RangeVarDS, BeginVarDS, EndVarDS;
+
+  auto TransformRangeBeginAndEnd = [&]() -> bool {
+    RangeVarDS = getDerived().TransformStmt(S->getRangeStmt());
+    if (RangeVarDS.isInvalid())
+      return false;
+
+    BeginVarDS = getDerived().TransformStmt(S->getBeginStmt());
+    if (BeginVarDS.isInvalid())
+      return false;
+
+    EndVarDS = getDerived().TransformStmt(S->getEndStmt());
+     if (EndVarDS.isInvalid())
+       return false;
+
+     return true;
+  };
+
+  // If the bodies have already been instantiated (e.g. this is a nested
+  // expansion, or had been nondependent in a dependent context which is now
+  // being instantiated), this needs special handling:
+  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild()) {
+
+    // HACK: Expansions over tuples, arrays and structs get bugs if we transform
+    // the __range at this point, and do not seem not need to reference the
+    // __range in those instantiations, so we just pass along the old
+    // non-transformed bodies.  (FIXME I'm not sure why these errors occur,
+    // or why instantiation is possible without transforming the __range, so
+    // may have to revisit this is further bugs occur (assert fails in
+    // findInstantiatedDecl etc.).
+    //
+    // On the other hand,, expansions over ranges require that we transform
+    // the range along with __begin and __end three before transforming the
+    // instantiations, as their loop vars explicitly refer to the
+    // instantiations of these declarations.
+    //
+    // Note we don't need to transform the loop var in either case, as each
+    // instantiated body now has its own private copy of the loop var.
+    if (!S->getBeginStmt()) // = is struct/array/tuple expansion
+      return getDerived().TransformInstantiatedCXXExpansionStmt(S);
+
+    // Range expansion
+    if (!TransformRangeBeginAndEnd())
+      return StmtError();
+
+    auto Res = TransformInstantiatedCXXExpansionStmt(S);
+    if (Res.isInvalid())
+      return StmtError();
+
+    auto *NewCES = cast<CXXCompositeExpansionStmt>(Res.get());
+    NewCES->setRangeStmt(RangeVarDS.get());
+    NewCES->setBeginStmt(BeginVarDS.get());
+    NewCES->setEndStmt(EndVarDS.get());
+
+    return NewCES;
+  }
+
+  // Bodies have not yet been instantiated yet: transform everything and let
+  // ActOnCXXExpansionStmt handle the rest.
+  if (!TransformRangeBeginAndEnd())
     return StmtError();
 
-  // FIXME: Is this actually an evaluated expression.
-  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid())
+  // The (always-dependent) loop var need only ever be transformed when the
+  // bodies have not yet been instantiated (once they have, each uses its own
+  // private copy of the loop variable without further reference to it).
+  StmtResult LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVarDS.isInvalid())
     return StmtError();
 
+  // If any of the above has changed, or we have been asked to always rebuild,
+  // redo all the ExpansionStatementBuilder stuff
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      RangeVar.get() != S->getRangeStmt() ||
-      LoopVar.get() != S->getLoopVarStmt()) {
+      RangeVarDS.get() != S->getRangeStmt() ||
+      BeginVarDS.get() != S->getBeginStmt() ||
+      EndVarDS.get() != S->getEndStmt() ||
+      LoopVarDS.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
         S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-        S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+        S->getStructLoc(), RangeVarDS.get(), LoopVarDS.get(),
+        S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8494,7 +8565,7 @@ TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+      S->getStructLoc(), RangeVarDS.get(), LoopVarDS.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }

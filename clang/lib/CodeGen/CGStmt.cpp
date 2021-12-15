@@ -1175,7 +1175,7 @@ void
 CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
                                       ArrayRef<const Attr *> ForAttrs) {
   if (!ForAttrs.empty())
-    llvm::errs() << "WARNING: Attributes ignored on template for";
+    llvm::errs() << "WARNING: Attributes ignored on template for"; //FIXME
 
   assert(S.getNumInstantiatedStmts() == S.getInstantiatedStmts().size() &&
          "These should not be different at this point");
@@ -1193,8 +1193,14 @@ CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
 
   LexicalScope ForScope(*this, S.getSourceRange());
 
-  if (auto *CES = dyn_cast<CXXCompositeExpansionStmt>(&S))
+  if (auto *CES = dyn_cast<CXXCompositeExpansionStmt>(&S)) {
     EmitStmt(CES->getRangeStmt());
+    if (CES->getBeginStmt()) {
+      assert(CES->getEndStmt() && "has __begin but not __end??");
+      EmitStmt(CES->getBeginStmt());
+      EmitStmt(CES->getEndStmt());
+    }
+  }
 
   // Emit the {LoopVarStmt, Body} instantiations
   // DWR FIXME handle continue, break statements

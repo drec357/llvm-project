@@ -3909,18 +3909,16 @@ ExpansionStatementBuilder::BuildExpansionOverTuple(bool Diagnose)
       /*TemplateKWLoc=*/SourceLocation(), DNI,
       /*NeedsADL=*/false, &TempArgs, FoundNames.begin(), FoundNames.end());
 
-  // Build the dependent call expression 'get<I>(__tuple)' or __get<I>()
+  // Build the dependent call expression 'get<I>(__tuple)' or '__get<I>()'
   ExprResult RangeAccessor;
   if (PassObjToGet) {
     ExprResult RangeRef =
-      SemaRef.BuildDeclRefExpr(RangeVar, RangeType,
-                               VK_LValue, ColonLoc);
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, ColonLoc);
     if (RangeRef.isInvalid())
       return StmtError();
     Expr *Args[] = {RangeRef.get()};
     RangeAccessor =
-        SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc,
-                              Args, ColonLoc);
+        SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc, Args, ColonLoc);
   } else {
     RangeAccessor =
         SemaRef.ActOnCallExpr(CurScope, Fn, ColonLoc,
@@ -4616,6 +4614,8 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
     };
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
+    MultiArgs.addOuterRetainedLevels(
+        Expansion->getInductionVarTPL()->getDepth());
 
     // We need a local instantiation scope with rewriting. This local
     // instantiation scope should be considered to be part of the parent

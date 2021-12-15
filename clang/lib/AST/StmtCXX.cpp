@@ -84,6 +84,24 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
 
+CXXExpansionStmt::CXXExpansionStmt(StmtClass SC, DeclStmt *LoopVar,
+                                   TemplateParameterList *InductionVarTPL,
+                                   SourceLocation TFL, SourceLocation CEL,
+                                   SourceLocation CL, SourceLocation SL,
+                                   SourceLocation RPL,
+                                   Stmt *RangeStmt,
+                                   Stmt *Body,
+                                   ArrayRef<Stmt *> Insts)
+  : Stmt(SC), TemplateForLoc(TFL), ConstexprLoc(CEL),
+    ColonLoc(CL), StructLoc(SL), RParenLoc(RPL),
+    InductionVarTPL(InductionVarTPL),
+    NumInstantiatedStmts(Insts.size()),
+    InstantiatedStmts(const_cast<Stmt **>(Insts.data())) {
+  SubExprs[LOOP] = LoopVar;
+  SubExprs[RANGE] = RangeStmt;
+  SubExprs[BODY] = Body;
+}
+
 VarDecl *CXXExpansionStmt::getLoopVariable() {
   Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
   assert(LV && "No loop variable in CXXExpansionStmt");
@@ -95,10 +113,12 @@ const VarDecl *CXXExpansionStmt::getLoopVariable() const {
 }
 
 NonTypeTemplateParmDecl *CXXExpansionStmt::getInductionVariable() {
+  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return cast<NonTypeTemplateParmDecl>(InductionVarTPL->getParam(0));
 }
 const NonTypeTemplateParmDecl *
 CXXExpansionStmt::getInductionVariable() const {
+  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return cast<NonTypeTemplateParmDecl>(InductionVarTPL->getParam(0));
 }
 
@@ -110,7 +130,9 @@ CXXCompositeExpansionStmt::Create(ASTContext &Context, DeclStmt *LoopVarDS,
                                   SourceLocation CL, SourceLocation SL,
                                   SourceLocation RPL, Stmt *Body,
                                   ArrayRef<Stmt *> Insts) {
+  assert(LoopVarDS);
   assert(RangeVarDS);
+  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return new (Context) CXXCompositeExpansionStmt(
       LoopVarDS, RangeVarDS, InductionVarTPL,
       TFL, CEL, CL, SL, RPL, Body, Insts);
@@ -123,13 +145,16 @@ CXXCompositeExpansionStmt::Create(ASTContext &Context, EmptyShell Empty) {
 
 CXXPackExpansionStmt *
 CXXPackExpansionStmt::Create(
-    ASTContext &Context, DeclStmt *LoopVar, Expr *RangeExpr,
+    ASTContext &Context, DeclStmt *LoopVarDS, Expr *RangeExpr,
     TemplateParameterList *InductionVarTPL,
     SourceLocation TFL, SourceLocation CEL,
     SourceLocation CL, SourceLocation RPL,
     Stmt *Body, ArrayRef<Stmt *> Insts) {
+  assert(LoopVarDS);
+  assert(RangeExpr);
+  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return new (Context) CXXPackExpansionStmt(
-      LoopVar, RangeExpr, InductionVarTPL, TFL, CEL, CL, RPL, Body, Insts);
+      LoopVarDS, RangeExpr, InductionVarTPL, TFL, CEL, CL, RPL, Body, Insts);
 }
 
 CXXPackExpansionStmt *

@@ -3245,8 +3245,8 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
 
     if (!isa<ParmVarDecl>(VD)) {
       assert(VD->getName() != "__range" &&
-             "[TemplateFor.Struct] known bug in nested expansions over "
-             "structs with non-constexpr loop vars");
+             "[TemplateFor] Bug, probably in nested expansions "
+             "with non-constexpr loop vars");
 
       // Assume variables referenced within a lambda's call operator that were
       // not declared within the call operator are captures and during checking
