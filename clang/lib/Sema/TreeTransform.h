@@ -8416,7 +8416,7 @@ TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(
-                                              CXXPackExpansionStmt *S) {
+                                                    CXXPackExpansionStmt *S) {
   // If the bodies have already been instantiated (e.g. this is a nested
   // expansion, or had been nondependent in a dependent context which is now
   // being instantiated), this needs special handling:

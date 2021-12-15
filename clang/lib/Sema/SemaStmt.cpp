@@ -3430,9 +3430,14 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
   } else if (isa<SubstNonTypeTemplateParmPackExpr>(RangeExpr)) {
     SubstNonTypeTemplateParmPackExpr *NTTPE =
       cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr);
-    unsigned N = NTTPE->getParameterPack()->getNumExpansionTypes();
-    PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTPE->getParameterPack(),
+    NonTypeTemplateParmDecl *NTTP = NTTPE->getParameterPack();
+    if (NTTP->isExpandedParameterPack()) {
+      unsigned N = NTTPE->getParameterPack()->getNumExpansionTypes();
+      PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTPE->getParameterPack(),
                                       Loc, Loc, N);
+    } else
+      PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTP, Loc, Loc);
+
   }
 
   RangeVarDS = nullptr;
