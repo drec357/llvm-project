@@ -113,12 +113,10 @@ const VarDecl *CXXExpansionStmt::getLoopVariable() const {
 }
 
 NonTypeTemplateParmDecl *CXXExpansionStmt::getInductionVariable() {
-  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return cast<NonTypeTemplateParmDecl>(InductionVarTPL->getParam(0));
 }
 const NonTypeTemplateParmDecl *
 CXXExpansionStmt::getInductionVariable() const {
-  assert(InductionVarTPL && InductionVarTPL->size()==1);
   return cast<NonTypeTemplateParmDecl>(InductionVarTPL->getParam(0));
 }
 
