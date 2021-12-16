@@ -3244,9 +3244,7 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       return true;
 
     if (!isa<ParmVarDecl>(VD)) {
-      assert(VD->getName() != "__range" &&
-             "[TemplateFor] Bug, probably in nested expansions "
-             "with non-constexpr loop vars");
+      assert(VD->getName() != "__range" && "Bug in template-for implem!");
 
       // Assume variables referenced within a lambda's call operator that were
       // not declared within the call operator are captures and during checking
@@ -14625,6 +14623,7 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
     if (!EvaluateArray(E, LV, Value, Info))
       return false;
     Result = Value;
+
   } else if (T->isRecordType()) {
     LValue LV;
     APValue &Value =

@@ -8387,12 +8387,12 @@ TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
   StmtResult NewBody = getDerived().TransformStmt(S->getBody());
   if (NewBody.isInvalid())
     return StmtError();
-  if (NewBody.get() == S->getBody()) {
-    // The body is unchanged by transformation,
-    // meaning its instantiations should be unchanged as well.
-    // We can simply return the old node.
+
+  // If the body is unchanged by transformation,
+  // its instantiations should be unchanged as well.
+  // Return the old node.
+  if (NewBody.get() == S->getBody())
     return S;
-  }
 
   // The dependent body was changed during transformation, which means
   // the instantiations should as well.
@@ -8410,9 +8410,8 @@ TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
   }
 
   // Dispatch to the appropriate Create function
-  return getDerived().
-      RebuildInstantiatedCXXExpansionStmt(S, NewBody.get(),
-                                          { NewInstantiations, N });
+  return getDerived().RebuildInstantiatedCXXExpansionStmt(
+      S, NewBody.get(), { NewInstantiations, N });
 }
 
 template <typename Derived>
@@ -8515,6 +8514,13 @@ TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
     //
     // Note we don't need to transform the loop var in either case, as each
     // instantiated body now has its own private copy of the loop var.
+    //
+    // FIXME This way of handling things for arrays/ranges/tuples is,
+    // as one might expect, causing problems.  I think what is needed is to
+    // store the instantiated statements together in a compound statement, with
+    // the __range and __begin and __end decl statements at the top; then you
+    // simply transform that.  That should eliminate the need for many hacks
+    // in nested expansions.
     if (!S->getBeginStmt()) // = is struct/array/tuple expansion
       return getDerived().TransformInstantiatedCXXExpansionStmt(S);
 

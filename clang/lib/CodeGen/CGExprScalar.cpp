@@ -1803,7 +1803,7 @@ Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(
 
 Value *ScalarExprEmitter::VisitCXXSelectPackElemExpr(
                                                 CXXSelectPackElemExpr *E) {
-  return EmitLoadOfLValue(E);
+  return Visit(E->getSubstituteExpr());
 }
 
 static int getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,
