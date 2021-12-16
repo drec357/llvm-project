@@ -147,12 +147,15 @@ CXXPackExpansionStmt::Create(
     TemplateParameterList *InductionVarTPL,
     SourceLocation TFL, SourceLocation CEL,
     SourceLocation CL, SourceLocation RPL,
+    SizeOfPackExpr *PackSize,
     Stmt *Body, ArrayRef<Stmt *> Insts) {
   assert(LoopVarDS);
   assert(RangeExpr);
   assert(InductionVarTPL && InductionVarTPL->size()==1);
-  return new (Context) CXXPackExpansionStmt(
-      LoopVarDS, RangeExpr, InductionVarTPL, TFL, CEL, CL, RPL, Body, Insts);
+  assert(PackSize);
+  return new (Context) CXXPackExpansionStmt(LoopVarDS, RangeExpr,
+                                            InductionVarTPL, TFL, CEL, CL, RPL,
+                                            PackSize, Body, Insts);
 }
 
 CXXPackExpansionStmt *

@@ -559,15 +559,18 @@ public:
 /// \endverbatim
 ///
 class CXXPackExpansionStmt final : public CXXExpansionStmt {
+  SizeOfPackExpr *PackSize; // Not a child expression
 
   CXXPackExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
                        TemplateParameterList *Parms,
                        SourceLocation TFL, SourceLocation CEL,
                        SourceLocation CL, SourceLocation RPL,
+                       SizeOfPackExpr *PackSize,
                        Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {})
     : CXXExpansionStmt(CXXPackExpansionStmtClass, LoopVar, Parms,
                        TFL, CEL, CL, /*StructLoc=*/SourceLocation(),
-                       RPL, RangeExpr, Body, Insts) {}
+                       RPL, RangeExpr, Body, Insts),
+      PackSize(PackSize) {}
 
   CXXPackExpansionStmt(EmptyShell Empty)
     : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
@@ -577,6 +580,7 @@ public:
   Create(ASTContext &Context, DeclStmt *LoopVar, Expr *RangeExpr,
          TemplateParameterList *InductionVarTPL, SourceLocation TFL,
          SourceLocation CEL, SourceLocation CL, SourceLocation RPL,
+         SizeOfPackExpr *PackSize,
          Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {});
 
   static CXXPackExpansionStmt *Create(ASTContext &Context,
@@ -587,7 +591,14 @@ public:
     return cast<Expr>(getRangeStmtOrExpr());
   }
   Expr *getRangeExpr() { return cast<Expr>(getRangeStmtOrExpr()); }
-  void setRangePackExpr(Expr *V) { setRangeStmtOrExpr(V); }
+  void setRangeExpr(Expr *V) { setRangeStmtOrExpr(V); }
+
+  /// Returns an implicit \c sizeof...(Pack) expression which we carry and
+  /// transform simply to calculate the size of the pack (except for
+  /// FuncitonParmPackExprs, which carry their size within.)
+  const SizeOfPackExpr *getSizeOfPackExpr() const { return PackSize; }
+  SizeOfPackExpr *getSizeOfPackExpr() { return PackSize; }
+  void setSizeOfPackExpr(SizeOfPackExpr *V) { PackSize = V; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXPackExpansionStmtClass;

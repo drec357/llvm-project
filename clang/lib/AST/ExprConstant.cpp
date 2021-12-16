@@ -5413,7 +5413,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (ESR != ESR_Succeeded)
       return ESR;
 
-    // Create the __begin and __end iterators if they exist.
+    // Evaluate the __begin and __end variables if they exist.
     if (const Stmt *Begin = ES->getBeginStmt()) {
       ESR = EvaluateStmt(Result, Info, Begin);
       if (ESR != ESR_Succeeded)
@@ -5448,6 +5448,8 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     // find the necessary substitute DeclRefs and instantiate them throughout
     // the body via CXXSelectPackElemExprs, so that will not be referenced
     // during evaluation of the instantiated bodies.
+    // Same with the ES->getSizeOfPackExpr() -- that will have been used
+    // earlier by Sema and is no longer useful at this stage of the program
 
     for (const Stmt *SubStmt : ES->getInstantiatedStmts()) {
       BlockScopeRAII InnerScope(Info);
@@ -7482,6 +7484,9 @@ public:
   bool VisitBuiltinBitCastExpr(const BuiltinBitCastExpr *E) {
     return static_cast<Derived*>(this)->VisitCastExpr(E);
   }
+  bool VisitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E) {
+    return StmtVisitorTy::Visit(E->getSubstituteExpr());
+  }
 
   bool VisitBinaryOperator(const BinaryOperator *E) {
     switch (E->getOpcode()) {
@@ -8150,7 +8155,6 @@ public:
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
   bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
-  bool VisitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -8461,11 +8465,6 @@ bool
 LValueExprEvaluator::VisitCXXSelectMemberExpr(
                                            const CXXSelectMemberExpr *E) {
   return VisitMemberExpr(E->getSubstituteExpr());
-}
-
-bool LValueExprEvaluator::VisitCXXSelectPackElemExpr(
-                                         const CXXSelectPackElemExpr *E) {
-  return VisitDeclRefExpr(E->getSubstituteExpr());
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {

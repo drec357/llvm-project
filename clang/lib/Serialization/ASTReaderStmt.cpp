@@ -1719,7 +1719,8 @@ void ASTStmtReader::VisitCXXCompositeExpansionStmt(
 void ASTStmtReader::VisitCXXPackExpansionStmt(
                                              CXXPackExpansionStmt *S) {
   VisitCXXExpansionStmt(S);
-  S->setRangePackExpr(Record.readExpr());
+  S->setRangeExpr(Record.readExpr());
+  S->setSizeOfPackExpr(cast<SizeOfPackExpr>(Record.readExpr()));
 }
 
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {

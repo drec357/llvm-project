@@ -8703,10 +8703,10 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
 
   // If the base is dependent, we won't be able to do any destructuring yet.
   if (BaseType->isDependentType())
-    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             Index, 0, nullptr,
-                                             Base->getLocation(), KWLoc,
-                                             BaseLoc);
+    return CXXSelectMemberExpr::Create(Context, BaseRef, Context.DependentTy,
+                                       Index, 0, nullptr,
+                                       Base->getLocation(), KWLoc,
+                                       BaseLoc);
 
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
@@ -8778,9 +8778,9 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
   if (Index->isTypeDependent() || Index->isValueDependent())
-    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             Index, Fields->size(), RD, Loc,
-                                             KWLoc, BaseLoc);
+    return CXXSelectMemberExpr::Create(Context, BaseRef, Context.DependentTy,
+                                       Index, Fields->size(), RD, Loc,
+                                       KWLoc, BaseLoc);
 
   // Index must be a integer constant expression.
   Expr::EvalResult Res;
@@ -8795,10 +8795,9 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
     return ExprError();
   }
 
-  return new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
-                                           Index, Fields->size(), RD, Loc,
-                                           KWLoc, BaseLoc,
-                                           /*Substitute=*/(*Fields)[I]);
+  return CXXSelectMemberExpr::Create(Context, BaseRef, (*Fields)[I]->getType(),
+                                     Index, Fields->size(), RD, Loc, KWLoc,
+                                     BaseLoc, /*Substitute=*/(*Fields)[I]);
 }
 
 
@@ -8831,29 +8830,48 @@ Sema::ActOnCXXSelectPackElemExpr(SourceLocation SelectLoc,
     return ExprError();
   }
 
+  auto DeclToDRE = [&](Decl *D) -> Expr * {
+    auto *VD = dyn_cast_or_null<ValueDecl>(D);
+    if (!VD)
+      return nullptr;
+    ExprResult DRE = BuildDeclRefExpr(VD, VD->getType().getNonReferenceType(),
+                                      VK_LValue, VD->getLocation());
+    return DRE.get();
+  };
+
+  Expr *Subst;
+
   // The pack has been substituted; we can build a non-dependent expression.
   // First fetch the Ith referenced declaration from the pack.
-  ValueDecl *VD;
-  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Range))
-    VD = FPPE->getExpansion(I);
-  else {
+  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Range)) {
+    Subst = DeclToDRE(FPPE->getExpansion(I));
+  } else {
     assert(isa<SubstNonTypeTemplateParmPackExpr>(Range) &&
            "Unhandled pack expression kind");
-    auto NTTPE = dyn_cast<SubstNonTypeTemplateParmPackExpr>(Range);
+    auto *NTTPE = cast<SubstNonTypeTemplateParmPackExpr>(Range);
     const TemplateArgument &TA = NTTPE->getArgumentPack().getPackAsArray()[I];
-    VD = TA.getAsDecl();
-    assert(VD && "Unhandled template argument kind");
+    switch (TA.getKind()) {
+    case TemplateArgument::Integral:
+      Subst = IntegerLiteral::Create(Context, TA.getAsIntegral(),
+                                     TA.getIntegralType(), Range->getExprLoc());
+      break;
+    case TemplateArgument::Declaration:
+      Subst = DeclToDRE(TA.getAsDecl());
+      break;
+    case TemplateArgument::Expression:
+      Subst = TA.getAsExpr();
+      break;
+    default:
+      Subst = nullptr;
+      // DWR FIXME diagnose
+      break;
+    }
   }
 
-  ExprResult SubstituteDRE =
-    BuildDeclRefExpr(VD, VD->getType().getNonReferenceType(),
-                     VK_LValue, VD->getLocation());
-  if (SubstituteDRE.isInvalid())
+  if (!Subst)
     return ExprError();
 
-  return CXXSelectPackElemExpr::Create(
-      Context, SelectLoc, Range, Index,
-      cast<DeclRefExpr>(SubstituteDRE.get()));
+  return CXXSelectPackElemExpr::Create(Context, SelectLoc, Range, Index, Subst);
 
 }
 

@@ -2319,6 +2319,9 @@ DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
 })
 
 DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
+  // We do not traverse the getSizeOfPackExpr, since that
+  // is simply used by Sema to calcluate the size of the pack
+  // for packs that need it
   if (!getDerived().shouldVisitImplicitCode()) {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeExpr());
     ShouldVisitChildren = false;

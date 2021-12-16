@@ -2431,11 +2431,12 @@ public:
                                          SourceLocation ConstexprLoc,
                                          SourceLocation ColonLoc,
                                          Expr *RangeExpr, Stmt *LoopVarDS,
+                                         SizeOfPackExpr *PackSize,
                                          SourceLocation RParenLoc) {
     return getSema().ActOnCXXExpansionStmt(TemplateForLoc, ConstexprLoc,
                                            LoopVarDS, ColonLoc,
                                            RangeExpr, RParenLoc,
-                                           Sema::BFRK_Rebuild,
+                                           PackSize, Sema::BFRK_Rebuild,
                                            ConstexprLoc.isValid());
   }
 
@@ -2456,7 +2457,9 @@ public:
           cast<CXXPackExpansionStmt>(OldS)->getRangeExpr(),
           OldS->getInductionVarTPL(), OldS->getTemplateForLoc(),
           OldS->getConstexprLoc(), OldS->getColonLoc(),
-          OldS->getRParenLoc(), NewBody, NewInsts);
+          OldS->getRParenLoc(),
+          cast<CXXPackExpansionStmt>(OldS)->getSizeOfPackExpr(),
+          NewBody, NewInsts);
     default:
       llvm_unreachable("Unhandled CXXExpansionStmt subclass");
     }
@@ -2689,9 +2692,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCXXSelectPackElemExpr(SourceLocation SelectLoc,
-                                              Expr *Range, Expr *Index) {
-    return getSema().ActOnCXXSelectPackElemExpr(SelectLoc, Range,
-                                                    Index);
+                                          Expr *Range, Expr *Index) {
+    return getSema().ActOnCXXSelectPackElemExpr(SelectLoc, Range, Index);
   }
 
   /// Build a new call expression.
@@ -8423,9 +8425,12 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
   if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
     return getDerived().TransformInstantiatedCXXExpansionStmt(S);
 
-  ExprResult RangeExpr;
-  RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
+  ExprResult RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
   if (RangeExpr.isInvalid())
+    return StmtError();
+
+  ExprResult PackSize = getDerived().TransformExpr(S->getSizeOfPackExpr());
+  if (PackSize.isInvalid())
     return StmtError();
 
   // FIXME: Is this actually an evaluated expression.
@@ -8437,8 +8442,9 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
   if (getDerived().AlwaysRebuild() ||
       LoopVarDS.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
-      S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVarDS.get(), S->getRParenLoc());
+        S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+        RangeExpr.get(), LoopVarDS.get(),
+        cast<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8453,7 +8459,8 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVarDS.get(), S->getRParenLoc());
+      RangeExpr.get(), LoopVarDS.get(),
+        cast<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }

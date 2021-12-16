@@ -3252,8 +3252,11 @@ struct ExpansionStatementBuilder
   /// Build the induction variable.
   bool BuildInductionVar();
 
+  /// Build the sizeof...(Pack) expression if the \c RangeExpr is a pack.
+  void BuildPackSizeExpr();
+
   /// Builds an expansion when the range is dependent.
-  StmtResult BuildDependentExpansion(bool ParameterPack = false);
+  StmtResult BuildDependentExpansion();
 
   /// Build the expansion over an unexpanded parameter pack.
   StmtResult BuildExpansionOverPack();
@@ -3345,8 +3348,40 @@ struct ExpansionStatementBuilder
   Expr *BeginCallRef;
   Expr *EndCallRef;
 
-  SizeOfPackExpr *PackSize;
+  /// A sizeof...(Pack) expression, implicitly generated and carried/transformed
+  /// by a CXXPackExpansionExpr node to help us calculate the size of a pack.
+  SizeOfPackExpr *PackSize = nullptr;
 };
+
+void
+ExpansionStatementBuilder::BuildPackSizeExpr() {
+  assert(RangeExpr->containsUnexpandedParameterPack());
+  assert(!PackSize && "Already calculated");
+  SourceLocation Loc; // no location info, this is totally implicit
+
+  if (isa<DeclRefExpr>(RangeExpr)) {
+    NamedDecl *PackDecl =
+      cast<NamedDecl>(cast<DeclRefExpr>(RangeExpr)->getDecl());
+    PackSize = SizeOfPackExpr::Create(SemaRef.Context, Loc, PackDecl, Loc, Loc);
+  } else if (isa<FunctionParmPackExpr>(RangeExpr)) {
+    FunctionParmPackExpr *FPPE = cast<FunctionParmPackExpr>(RangeExpr);
+    PackSize = SizeOfPackExpr::Create(SemaRef.Context, Loc,
+                                      FPPE->getParameterPack(),
+                                      Loc, Loc, FPPE->getNumExpansions());
+  } else if (isa<SubstNonTypeTemplateParmPackExpr>(RangeExpr)) {
+    SubstNonTypeTemplateParmPackExpr *NTTPE =
+      cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr);
+    NonTypeTemplateParmDecl *NTTP = NTTPE->getParameterPack();
+    if (NTTP->isExpandedParameterPack()) {
+      unsigned N = NTTPE->getParameterPack()->getNumExpansionTypes();
+      PackSize = SizeOfPackExpr::Create(SemaRef.Context, Loc,
+                                        NTTPE->getParameterPack(),
+                                        Loc, Loc, N);
+    } else
+      PackSize = SizeOfPackExpr::Create(SemaRef.Context, Loc, NTTP, Loc, Loc);
+  } else
+    llvm_unreachable("Unhandled pack expression kind");
+}
 
 ExpansionStatementBuilder::
 ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
@@ -3356,17 +3391,6 @@ ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
     IsConstexpr(isConstexpr)
 {
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
-
-  SourceLocation Loc;
-  if (isa<DeclRefExpr>(RangeExpr)) {
-    NamedDecl *PackDecl =
-      cast<NamedDecl>(cast<DeclRefExpr>(RangeExpr)->getDecl());
-    PackSize = SizeOfPackExpr::Create(S.Context, Loc, PackDecl, Loc, Loc);
-  } else if (isa<FunctionParmPackExpr>(RangeExpr)) {
-    FunctionParmPackExpr *FPPE = cast<FunctionParmPackExpr>(RangeExpr);
-    PackSize = SizeOfPackExpr::Create(S.Context, Loc, FPPE->getParameterPack(),
-                                      Loc, Loc, FPPE->getNumExpansions());
-  }
 
   // Check if the loop variable was marked constexpr.
   if (IsConstexpr) {
@@ -3417,28 +3441,6 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
     RangeExpr(rangeExpr), IsConstexpr(isConstexpr), TemplateForLoc(),
     ConstexprLoc(), ColonLoc(), RParenLoc() {
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
-
-  SourceLocation Loc;
-  if (isa<DeclRefExpr>(RangeExpr)) {
-    NamedDecl *PackDecl =
-      cast<NamedDecl>(cast<DeclRefExpr>(RangeExpr)->getDecl());
-    PackSize = SizeOfPackExpr::Create(S.Context, Loc, PackDecl, Loc, Loc);
-  } else if (isa<FunctionParmPackExpr>(RangeExpr)) {
-    FunctionParmPackExpr *FPPE = cast<FunctionParmPackExpr>(RangeExpr);
-    PackSize = SizeOfPackExpr::Create(S.Context, Loc, FPPE->getParameterPack(),
-                                      Loc, Loc, FPPE->getNumExpansions());
-  } else if (isa<SubstNonTypeTemplateParmPackExpr>(RangeExpr)) {
-    SubstNonTypeTemplateParmPackExpr *NTTPE =
-      cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr);
-    NonTypeTemplateParmDecl *NTTP = NTTPE->getParameterPack();
-    if (NTTP->isExpandedParameterPack()) {
-      unsigned N = NTTPE->getParameterPack()->getNumExpansionTypes();
-      PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTPE->getParameterPack(),
-                                      Loc, Loc, N);
-    } else
-      PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTP, Loc, Loc);
-
-  }
 
   RangeVarDS = nullptr;
   RangeVar = nullptr;
@@ -3666,18 +3668,19 @@ ExpansionStatementBuilder::BuildInductionVar()
 /// the loop, but don't pre-compute e.g., tuple sizes or induction value
 /// sequences.
 StmtResult
-ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
+ExpansionStatementBuilder::BuildDependentExpansion()
 {
   // Parameter pack expansions can be determined while the range is still
   // dependent. We can use this information to avoid problems during semantic
   // analysis of the body.
-  if (!PackExpansion)
+  if (!PackSize)
     return CXXCompositeExpansionStmt::Create(
         SemaRef.Context, LoopDeclStmt, RangeVarDS, InductionVarTPL,
         TemplateForLoc, ConstexprLoc, ColonLoc, StructLoc, RParenLoc);
   return CXXPackExpansionStmt::Create(
       SemaRef.Context, LoopDeclStmt, RangeExpr, InductionVarTPL,
-      TemplateForLoc, ConstexprLoc, ColonLoc, RParenLoc);
+      TemplateForLoc, ConstexprLoc, ColonLoc, RParenLoc,
+      PackSize);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3708,6 +3711,13 @@ ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverPack()
 {
+  // Build the sizeof...(Pack) expression, needed to help us calculate the pack
+  // size in the case of NTTPs (whereas FunctionParmPackExprs carry their size
+  // intrinsically).  If we have been passed a PackSize from TreeTransform, use
+  // that instead.
+  if (!PackSize)
+    BuildPackSizeExpr();
+
   // Substitute any 'auto's in the loop variable as 'dependent auto'. We'll
   // fill them in properly when we instantiate the loop.
   // This duplicates code done in FinishRangeVar(), but in this case
@@ -3721,16 +3731,10 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
   // If we can't get a size, we're still dependent.
   if (PackSize->isValueDependent()) {
     LoopVar->setType(SemaRef.Context.DependentTy);
-    return BuildDependentExpansion(/*PackExpansion=*/true);
+    return BuildDependentExpansion();
   }
 
-  std::size_t Size;
-  if (auto *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
-    Size = FPPE->getNumExpansions();
-  else if (auto *NTTPE = dyn_cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr)){
-    Size = NTTPE->getArgumentPack().pack_elements().size();
-  } else
-    llvm_unreachable("Unimplemented pack kind\n");
+  std::size_t Size = PackSize->getPackLength();
 
   ExprResult PackAccessor =
     SemaRef.ActOnCXXSelectPackElemExpr(/*SelectLoc=*/SourceLocation(),
@@ -3748,7 +3752,7 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
   return CXXPackExpansionStmt::Create(
       SemaRef.Context, LoopDeclStmt, RangeExpr, InductionVarTPL,
       TemplateForLoc, ConstexprLoc, ColonLoc, RParenLoc,
-      /*Body=*/nullptr, /*Insts=*/{nullptr, Size});
+      PackSize, /*Body=*/nullptr, /*Insts=*/{nullptr, Size});
 }
 
 /// ---Arrays---
@@ -4321,6 +4325,7 @@ Sema::ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
                             SourceLocation ConstexprLoc, Stmt *LoopVarDS,
                             SourceLocation ColonLoc, Expr *RangeExpr,
                             SourceLocation RParenLoc,
+                            SizeOfPackExpr *PackSize,
                             BuildForRangeKind Kind, bool IsConstexpr) {
   // This overload is called after during TreeTransform for
   // a pack expansion.
@@ -4330,6 +4335,7 @@ Sema::ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
   Builder.ConstexprLoc = ConstexprLoc;
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
+  Builder.PackSize = PackSize;
   StmtResult Ret = Builder.Build();
   return Ret;
 }

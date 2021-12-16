@@ -1743,17 +1743,55 @@ CUDAKernelCallExpr *CUDAKernelCallExpr::CreateEmpty(const ASTContext &Ctx,
   return new (Mem) CUDAKernelCallExpr(NumArgs, HasFPFeatures, Empty);
 }
 
+CXXSelectMemberExpr::CXXSelectMemberExpr(Expr *Base, QualType T, Expr *Index,
+                                         std::size_t NumFields,
+                                         CXXRecordDecl *RD,
+                                         SourceLocation RecordLoc,
+                                         SourceLocation SelectLoc,
+                                         SourceLocation BaseLoc,
+                                         Expr *Substitute)
+  : CXXSelectExpr(CXXSelectMemberExprClass, T, SelectLoc,
+                  Base, Index, Substitute),
+    Record(RD), RecordLoc(RecordLoc), NumFields(NumFields)
+{}
+
+CXXSelectMemberExpr *CXXSelectMemberExpr::Create(ASTContext &Context,
+                                                 Expr *Base,
+                                                 QualType T, Expr *Index,
+                                                 std::size_t NumFields,
+                                                 CXXRecordDecl *RD,
+                                                 SourceLocation RecordLoc,
+                                                 SourceLocation SelectLoc,
+                                                 SourceLocation BaseLoc,
+                                                 Expr *Substitute) {
+  return new (Context) CXXSelectMemberExpr(
+      Base, T, Index, NumFields, RD, RecordLoc, SelectLoc, BaseLoc, Substitute);
+}
+
+CXXSelectMemberExpr *
+CXXSelectMemberExpr::Create(ASTContext &Context, EmptyShell Empty) {
+  return new (Context) CXXSelectMemberExpr(Empty);
+}
+
+CXXSelectPackElemExpr::CXXSelectPackElemExpr(QualType T,
+                                             SourceLocation SelectLoc,
+                                             Expr *RangeFPPE_or_NTTPE,
+                                             Expr *Index, Expr *Substitute)
+    : CXXSelectExpr(CXXSelectPackElemExprClass, T, SelectLoc,
+                    RangeFPPE_or_NTTPE, Index, Substitute,
+                    Substitute ? Substitute->getValueKind() : VK_LValue)
+{}
+
 CXXSelectPackElemExpr *
 CXXSelectPackElemExpr::Create(ASTContext &Context, SourceLocation SelectLoc,
-                                  Expr *RangeFPPE_or_NTTPE,
-                                  Expr *Index, DeclRefExpr *SubstituteDRE) {
-  QualType T = SubstituteDRE ? SubstituteDRE->getType() : Context.DependentTy;
+                              Expr *RangeFPPE_or_NTTPE,
+                              Expr *Index, Expr *Substitute) {
+  QualType T = Substitute ? Substitute->getType() : Context.DependentTy;
   return new (Context) CXXSelectPackElemExpr(
-      T, SelectLoc, RangeFPPE_or_NTTPE, Index, SubstituteDRE);
+      T, SelectLoc, RangeFPPE_or_NTTPE, Index, Substitute);
 }
 
 CXXSelectPackElemExpr *
-CXXSelectPackElemExpr::Create(ASTContext &Context,
-                                  EmptyShell Empty) {
+CXXSelectPackElemExpr::Create(ASTContext &Context, EmptyShell Empty) {
   return new (Context) CXXSelectPackElemExpr(Empty);
 }

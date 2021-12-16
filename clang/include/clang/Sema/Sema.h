@@ -4835,8 +4835,8 @@ public:
   ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
                         SourceLocation ConstexprLoc, Stmt *LoopVarDS,
                         SourceLocation ColonLoc, Expr *RangeExpr,
-                        SourceLocation RParenLoc, BuildForRangeKind Kind,
-                        bool IsConstexpr);
+                        SourceLocation RParenLoc, SizeOfPackExpr *PackSize,
+                        BuildForRangeKind Kind, bool IsConstexpr);
 
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
 

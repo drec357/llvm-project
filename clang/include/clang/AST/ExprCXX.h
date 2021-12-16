@@ -4886,8 +4886,9 @@ class CXXSelectExpr : public Expr {
 
 protected:
   CXXSelectExpr(StmtClass SC, QualType T, SourceLocation SelectLoc,
-                    Expr *Range, Expr *Index, Expr *Substitute)
-    : Expr(SC, T, VK_LValue, OK_Ordinary),
+                Expr *Range, Expr *Index, Expr *Substitute,
+                ExprValueKind VK = VK_LValue)
+    : Expr(SC, T, VK, OK_Ordinary),
       RangeAndIndex{Range, Index}, Substitute(Substitute) {
     setSelectLoc(SelectLoc);
     setDependence(computeDependence(this));
@@ -4976,23 +4977,25 @@ class CXXSelectMemberExpr final : public CXXSelectExpr {
   /// must be less than this).
   int NumFields;
 
-public:
   //FIXME make this private, use a Create function instead.
-  CXXSelectMemberExpr(Expr *Base,
-                      QualType T,
-                      Expr *Index,
-                      std::size_t NumFields,
-                      CXXRecordDecl *RD,
-                      SourceLocation RecordLoc,
-                      SourceLocation SelectLoc,
-                      SourceLocation BaseLoc,
-                      Expr *Substitute = nullptr)
-    : CXXSelectExpr(CXXSelectMemberExprClass, T, SelectLoc,
-                    Base, Index, Substitute),
-      Record(RD), RecordLoc(RecordLoc), NumFields(NumFields) {}
+  CXXSelectMemberExpr(Expr *Base, QualType T, Expr *Index,
+                      std::size_t NumFields, CXXRecordDecl *RD,
+                      SourceLocation RecordLoc, SourceLocation SelectLoc,
+                      SourceLocation BaseLoc, Expr *Substitute = nullptr);
 
   CXXSelectMemberExpr(EmptyShell Empty)
     : CXXSelectExpr(CXXSelectMemberExprClass, Empty) {}
+
+public:
+  static CXXSelectMemberExpr *Create(ASTContext &Context, Expr *Base,
+                                     QualType T, Expr *Index,
+                                     std::size_t NumFields, CXXRecordDecl *RD,
+                                     SourceLocation RecordLoc,
+                                     SourceLocation SelectLoc,
+                                     SourceLocation BaseLoc,
+                                     Expr *Substitute = nullptr);
+
+  static CXXSelectMemberExpr *Create(ASTContext &Context, EmptyShell Empty);
 
   /// Returns the source code location of the (optional) ellipsis.
   SourceLocation getRecordLoc() const { return RecordLoc; }
@@ -5013,13 +5016,7 @@ public:
 class CXXSelectPackElemExpr final : public CXXSelectExpr {
   CXXSelectPackElemExpr(QualType T, SourceLocation SelectLoc,
                             Expr *RangeFPPE_or_NTTPE,
-                            Expr *Index, DeclRefExpr *SubstituteDRE)
-      : CXXSelectExpr(CXXSelectPackElemExprClass, T, SelectLoc,
-                          RangeFPPE_or_NTTPE, Index, SubstituteDRE) {
-    assert(isa<FunctionParmPackExpr>(RangeFPPE_or_NTTPE) ||
-           isa<SubstNonTypeTemplateParmPackExpr>(RangeFPPE_or_NTTPE) &&
-            "Unhandled pack expression");
-  }
+                            Expr *Index, Expr *Substitute);
 
   CXXSelectPackElemExpr(EmptyShell Empty)
     : CXXSelectExpr(CXXSelectPackElemExprClass, Empty) {}
@@ -5028,10 +5025,9 @@ public:
   static CXXSelectPackElemExpr *
   Create(ASTContext &Context, SourceLocation SelectLoc,
          Expr *RangeFPPE_or_NTTPE, Expr *Index,
-         DeclRefExpr *SubstituteDRE = nullptr);
+         Expr *Substitute = nullptr);
 
-  static CXXSelectPackElemExpr *Create(ASTContext &Context,
-                                           EmptyShell Empty);
+  static CXXSelectPackElemExpr *Create(ASTContext &Context, EmptyShell Empty);
 
   /// The range expression may either be a FunctionParmPackExpr or a
   /// SubstNonTypeTemplateParmPackExpr.  This dyn_casts to the the former.
@@ -5052,15 +5048,6 @@ public:
   }
   void setRangeExpr(SubstNonTypeTemplateParmPackExpr *V) {
     CXXSelectExpr::setRangeExpr(V);
-  }
-
-  /// The MemberExpr to substitute for this expression during
-  /// evaluation.  Null when this is a dependent expression.
-  DeclRefExpr *getSubstituteExpr() const {
-    return cast_or_null<DeclRefExpr>(CXXSelectExpr::getSubstituteExpr());
-  }
-  void setSubstituteExpr(DeclRefExpr *V) {
-    CXXSelectExpr::setSubstituteExpr(V);
   }
 
   static bool classof(const Stmt *T) {
