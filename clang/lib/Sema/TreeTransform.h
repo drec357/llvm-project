@@ -717,13 +717,6 @@ public:
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
-  StmtResult TransformInstantiatedCXXExpansionStmt(CXXExpansionStmt *S);
-  StmtResult
-  TransformInstantiatedCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S,
-                                                 Stmt *RangeVarDS,
-                                                 Stmt *BeginVarDS,
-                                                 Stmt *EndVarDS);
-
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
 #define STMT(Node, Parent)                        \
@@ -8366,76 +8359,35 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
 }
 
-/// This helps us deal with transformations of CXXExpansionStmts which
-/// have already been expanded, which tells us:
-///   1. We are probably in a nested expansion, and
-///   2. The RangeVar/RangeExpr and LoopVar are non-dependent, but
-///   3. The instantiated statements may or may not be dependent.
-template <typename Derived>
-StmtResult
-TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
-                                                         CXXExpansionStmt *S) {
-  assert(!getDerived().AlwaysRebuild() && "This not do a full rebuild");
-
-  // Transform the (always-dependent) getBody() expression, whence the
-  // instantiations arose.  While this new body is not necessary to
-  // re-instantiate the instantiations -- they can be individually
-  // transformed at this point -- at least transforming it can tell us whether
-  // we need to transform the instantiations again, and provides the
-  // AST node with nice generalized information which may be useful
-  // (e.g. in statement printing).
-  StmtResult NewBody = getDerived().TransformStmt(S->getBody());
-  if (NewBody.isInvalid())
-    return StmtError();
-
-  // If the body is unchanged by transformation,
-  // its instantiations should be unchanged as well.
-  // Return the old node.
-  if (NewBody.get() == S->getBody())
-    return S;
-
-  // The dependent body was changed during transformation, which means
-  // the instantiations should as well.
-  size_t N = S->getNumInstantiatedStmts();
-  auto OldInstsArr = S->getInstantiatedStmts();
-  assert(N == OldInstsArr.size());
-  Stmt **NewInstantiations = new (SemaRef.Context) Stmt *[N];
-  for (std::size_t I = 0; I < N; ++I) {
-    StmtResult SR = getDerived().TransformStmt(OldInstsArr[I]);
-    if (SR.isInvalid())
-      return StmtError();
-    assert(NewInstantiations[I] != SR.get() &&
-           "Expcted this would transform given that the dependent body did");
-    NewInstantiations[I] = SR.get();
-  }
-
-  // Dispatch to the appropriate Create function
-  return getDerived().RebuildInstantiatedCXXExpansionStmt(
-      S, NewBody.get(), { NewInstantiations, N });
-}
-
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(
                                                     CXXPackExpansionStmt *S) {
-  // If the bodies have already been instantiated (e.g. this is a nested
-  // expansion, or had been nondependent in a dependent context which is now
-  // being instantiated), this needs special handling:
-  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
-    return getDerived().TransformInstantiatedCXXExpansionStmt(S);
 
   ExprResult RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
   if (RangeExpr.isInvalid())
     return StmtError();
 
   ExprResult PackSize = getDerived().TransformExpr(S->getSizeOfPackExpr());
-  if (PackSize.isInvalid())
-    return StmtError();
+    if (PackSize.isInvalid())
+      return StmtError();
 
-  // FIXME: Is this actually an evaluated expression.
-  StmtResult LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVarDS.isInvalid())
-    return StmtError();
+  // Hack: we seem to get weird assert fails on cerain cases if we transform
+  // the loop var stmt after it was previously instantiated.  Fortunately,
+  // it does not (yet) seem to be necessary to transform it: if the old
+  // statement had been previously instantiated, the loop variable seems to
+  // have no need for further transformation (knock on wood).
+  // The opposite seems to be the case for the RangeExpr and PackSize: they need
+  // to be rebuilt each time, even if already instantiated, or we will end
+  // up with an empty pack.
+  StmtResult LoopVarDS;
+  if (S->isInstantiated() && !getDerived().AlwaysRebuild())
+    LoopVarDS = S->getLoopVarStmt();
+  else {
+    LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+    if (LoopVarDS.isInvalid())
+      return StmtError();
+  }
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
@@ -8443,7 +8395,7 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
         S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
         RangeExpr.get(), LoopVarDS.get(),
-        cast<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
+        cast_or_null<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8459,7 +8411,7 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
       RangeExpr.get(), LoopVarDS.get(),
-        cast<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
+        cast_or_null<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8475,80 +8427,32 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::
 TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
+  StmtResult RangeVarDS, BeginVarDS, EndVarDS, LoopVarDS;
 
-  StmtResult RangeVarDS, BeginVarDS, EndVarDS;
-
-  auto TransformRangeBeginAndEnd = [&]() -> bool {
+  // A bit of a hack to get `template for (auto x : struct obj)` to work:
+  // if we transform it here, we get a weird assert fail.
+  // But, if S has already been instantiated, that means we already know the
+  // class of the range, which is all we need.
+  if (S->getStructLoc().isValid() && S->isInstantiated() &&
+      !getDerived().AlwaysRebuild())
+    RangeVarDS = S->getRangeStmt();
+  else {
     RangeVarDS = getDerived().TransformStmt(S->getRangeStmt());
     if (RangeVarDS.isInvalid())
-      return false;
+      return StmtError();
 
     BeginVarDS = getDerived().TransformStmt(S->getBeginStmt());
     if (BeginVarDS.isInvalid())
-      return false;
+      return StmtError();
 
     EndVarDS = getDerived().TransformStmt(S->getEndStmt());
-     if (EndVarDS.isInvalid())
-       return false;
-
-     return true;
-  };
-
-  // If the bodies have already been instantiated (e.g. this is a nested
-  // expansion, or had been nondependent in a dependent context which is now
-  // being instantiated), this needs special handling:
-  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild()) {
-
-    // HACK: Expansions over tuples, arrays and structs get bugs if we transform
-    // the __range at this point, and do not seem not need to reference the
-    // __range in those instantiations, so we just pass along the old
-    // non-transformed bodies.  (FIXME I'm not sure why these errors occur,
-    // or why instantiation is possible without transforming the __range, so
-    // may have to revisit this is further bugs occur (assert fails in
-    // findInstantiatedDecl etc.).
-    //
-    // On the other hand,, expansions over ranges require that we transform
-    // the range along with __begin and __end three before transforming the
-    // instantiations, as their loop vars explicitly refer to the
-    // instantiations of these declarations.
-    //
-    // Note we don't need to transform the loop var in either case, as each
-    // instantiated body now has its own private copy of the loop var.
-    //
-    // FIXME This way of handling things for arrays/ranges/tuples is,
-    // as one might expect, causing problems.  I think what is needed is to
-    // store the instantiated statements together in a compound statement, with
-    // the __range and __begin and __end decl statements at the top; then you
-    // simply transform that.  That should eliminate the need for many hacks
-    // in nested expansions.
-    if (!S->getBeginStmt()) // = is struct/array/tuple expansion
-      return getDerived().TransformInstantiatedCXXExpansionStmt(S);
-
-    // Range expansion
-    if (!TransformRangeBeginAndEnd())
+    if (EndVarDS.isInvalid())
       return StmtError();
-
-    auto Res = TransformInstantiatedCXXExpansionStmt(S);
-    if (Res.isInvalid())
-      return StmtError();
-
-    auto *NewCES = cast<CXXCompositeExpansionStmt>(Res.get());
-    NewCES->setRangeStmt(RangeVarDS.get());
-    NewCES->setBeginStmt(BeginVarDS.get());
-    NewCES->setEndStmt(EndVarDS.get());
-
-    return NewCES;
   }
 
-  // Bodies have not yet been instantiated yet: transform everything and let
-  // ActOnCXXExpansionStmt handle the rest.
-  if (!TransformRangeBeginAndEnd())
-    return StmtError();
-
-  // The (always-dependent) loop var need only ever be transformed when the
-  // bodies have not yet been instantiated (once they have, each uses its own
-  // private copy of the loop variable without further reference to it).
-  StmtResult LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+  // It seems necessary to rebuild the loop variable every time, to avoid
+  // weird errors.
+  LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
   if (LoopVarDS.isInvalid())
     return StmtError();
 

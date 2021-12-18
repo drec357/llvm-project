@@ -3244,7 +3244,7 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       return true;
 
     if (!isa<ParmVarDecl>(VD)) {
-      assert(VD->getName() != "__range" && "Bug in template-for implem!");
+      assert(!VD->isImplicitExpansionRangeVar() && "Template-for implem bug");
 
       // Assume variables referenced within a lambda's call operator that were
       // not declared within the call operator are captures and during checking

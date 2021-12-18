@@ -5994,9 +5994,9 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
   DeclContext *ParentDC = D->getDeclContext();
   // Determine whether our parent context depends on any of the template
   // arguments we're currently substituting.
-  // Expansion statements are essentially a templated statement in a function
-  // body, and that function may be non-dependent, and so we must
-  // handle that as a dependent parent too.
+  // Expansion statements are essentially a templated statement located in
+  // a function body, and that function may be non-dependent, and so we must
+  // explicitly specify that as a dependent parent too.
   bool ParentDependsOnArgs = isDependentContextAtLevel(
       ParentDC, TemplateArgs.getNumRetainedOuterLevels()) ||
       (CurrentInstantiationScope &&

@@ -4816,6 +4816,7 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
+  // Overload called by Parser:
   StmtResult
   ActOnCXXExpansionStmt(Scope *S, SourceLocation TemplateForLoc,
                         SourceLocation ConstexprLoc, Stmt *LoopVarDS,
@@ -4823,6 +4824,8 @@ public:
                         SourceLocation StructLoc, Expr *RangeVarDS,
                         SourceLocation RParenLoc,
                         BuildForRangeKind Kind, bool IsConstexpr);
+
+  // Overload called by TreeTransform for a composite:
   StmtResult
   ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
                         SourceLocation ConstexprLoc, Stmt *LoopVarDS,
@@ -4830,7 +4833,8 @@ public:
                         SourceLocation StructLoc, Stmt *RangeVarDS,
                         SourceLocation RParenLoc, BuildForRangeKind Kind,
                         bool IsConstexpr);
-  /// Build a CXXExpansionStmt over a pack.
+
+  /// Overload called by TreeTransform for a pack:
   StmtResult
   ActOnCXXExpansionStmt(SourceLocation TemplateForLoc,
                         SourceLocation ConstexprLoc, Stmt *LoopVarDS,

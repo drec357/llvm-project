@@ -324,9 +324,9 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseConceptReference(const ConceptReference &C);
 
-  /// Recursively visit a `template for` statement
-  bool TraverseCXXExpansionStmt(CXXExpansionStmt *S,
-                                DataRecursionQueue *Queue = nullptr);
+  /// Base traversal helper for recursively visiting a `template for` statement
+  bool TraverseCXXExpansionStmtHelper(CXXExpansionStmt *S,
+                                      DataRecursionQueue *Queue = nullptr);
   // ---- Methods on Attrs ----
 
   // Visit an attribute.
@@ -2292,7 +2292,7 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
 })
 
 template <typename Derived>
-bool RecursiveASTVisitor<Derived>::TraverseCXXExpansionStmt(
+bool RecursiveASTVisitor<Derived>::TraverseCXXExpansionStmtHelper(
     CXXExpansionStmt *S, DataRecursionQueue *Queue) {
   if (!getDerived().shouldVisitImplicitCode()) {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
@@ -2300,7 +2300,8 @@ bool RecursiveASTVisitor<Derived>::TraverseCXXExpansionStmt(
   } else
     TRY_TO(TraverseTemplateParameterListHelper(S->getInductionVarTPL()));
 
-  if (getDerived().shouldVisitTemplateInstantiations())
+  if (getDerived().shouldVisitTemplateInstantiations() &&
+      S->isInstantiated())
     for (Stmt *Inst : S->getInstantiatedStmts())
       TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(Inst);
 
@@ -2315,7 +2316,7 @@ DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeInit());
     ShouldVisitChildren = false;
   }
-  TRY_TO(TraverseCXXExpansionStmt(S, Queue));
+  TRY_TO(TraverseCXXExpansionStmtHelper(S, Queue));
 })
 
 DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
@@ -2326,7 +2327,7 @@ DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeExpr());
     ShouldVisitChildren = false;
   }
-  TRY_TO(TraverseCXXExpansionStmt(S, Queue));
+  TRY_TO(TraverseCXXExpansionStmtHelper(S, Queue));
 })
 
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {

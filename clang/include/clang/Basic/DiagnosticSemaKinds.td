@@ -2785,7 +2785,7 @@ def note_private_extern : Note<
 
 // TemplateFor
 def note_loop_body_instantiation_here : Note<
-  "in instantiation of loop body expansion">;
+  "in loop body instantiation">;
 def err_index_not_ice : Error<
   "index not an integer constant expression.">;
 def err_index_exceeds_numaccmems : Error<

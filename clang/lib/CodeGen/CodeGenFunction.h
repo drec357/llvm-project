@@ -4657,7 +4657,7 @@ private:
     // [TemplateFor] Hack: in nested expansion statements, range
     // and loop variables can sometimes be re-emitted; it is tricky
     // to isolate exactly when, so we will just allow the map insertion
-    // to not take place here.
+    // to not take place here.  DWR FIXME is this still needed?  Test.
     assert(!LocalDeclMap.count(VD)
            || VD->isImplicitExpansionRangeVar()
            || VD->isImplicitExpansionLoopVar()

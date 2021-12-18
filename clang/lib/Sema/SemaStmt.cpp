@@ -3638,7 +3638,8 @@ ExpansionStatementBuilder::FinishRangeVar()
 bool
 ExpansionStatementBuilder::BuildInductionVar()
 {
-  int Depth = NewTemplateParameterDepth(SemaRef.CurContext);
+  int Depth = NewTemplateParameterDepth(SemaRef.CurContext) +
+              SemaRef.LoopExpansionStack.size();
   IdentifierInfo *ParmName = &SemaRef.Context.Idents.get("__N");
   const QualType ParmTy = SemaRef.Context.getSizeType();
   TypeSourceInfo *ParmTI =
@@ -4576,7 +4577,7 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(S);
   SourceLocation Loc = Expansion->getColonLoc();
 
-  // FIXME: this Push/PopLoopExpansion doesn't seem to be used, delete it.
+  // DWR FIXME: this Push/PopLoopExpansion doesn't seem to be used, delete it.
   // We're no longer in a dependent loop body context.
   PopLoopExpansion();
 
@@ -4601,11 +4602,35 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
       return Expansion;
   }
 
-  // When there are no members, return an empty compound statement.
-  if (Expansion->getNumInstantiatedStmts() == 0) {
-    return CompoundStmt::Create
-      (Context, None, SourceLocation(), SourceLocation());
-  }
+  // At this point, we know our range initializer expression or pack expression
+  // is non-dependent, which means we can instantiate the bodies.
+  //
+  // Note though, that if this is a dependent context -- and an enclosing
+  // expansion statement counts as a dependent context -- then we will surely
+  // need to reinstantiate all the statements again later, once
+  // everything is non-dependent.  So we don't really gain anything from
+  // instantiating in a dependent context...or so it seems.
+  //
+  // In reality it is not that simple.  Instantiating every time seems to be
+  // necessary to maintain a valid map from pattern decls to their
+  // instantiations.  Without instantiation each time, the dependent version
+  // of the referenced declarations seems to make it to Codegen.
+  // That is, if we were *not* to instantiate the statements each time,
+  // the following error occurs:
+  //
+  // \code
+  //   static constexpr int arr42[] = { 4, 2 };
+  //   void lambda_test() {
+  //     int res;
+  //     constexpr auto Lambda = [&]<typename V>(V v) {
+  //       template for (constexpr V c : arr42) // "A"
+  //         ; //dependent context: if we don't instantiate now, then...
+  //     };
+  //     template for (constexpr int d : arr42) // "B"
+  //       Lambda(d); // CRASH: uninstantiated CXXExpansionStmt ("A") in Codegen
+  //   }
+  // \endcode
+
 
   // Create a new compound statement that binds the loop variable with the
   // parsed body. This is what we're going to instantiate.

@@ -323,6 +323,10 @@ public:
     return llvm::makeArrayRef(InstantiatedStmts, NumInstantiatedStmts);
   }
 
+  /// Whether this has been instantiated into a substitute compound statement,
+  /// vs. is still dependent.
+  bool isInstantiated() const { return InstantiatedStmts; }
+
   size_t getNumInstantiatedStmts() const { return NumInstantiatedStmts; }
 
   /// Returns a pointer to the first instantiated statement.

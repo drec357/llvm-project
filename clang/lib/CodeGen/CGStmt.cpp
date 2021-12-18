@@ -1174,13 +1174,20 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
 void
 CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
                                       ArrayRef<const Attr *> ForAttrs) {
-  if (!ForAttrs.empty())
-    llvm::errs() << "WARNING: Attributes ignored on template for"; //FIXME
+  PrettyStackTraceLoc CrashInfo(getContext().getSourceManager(),
+                                S.getBeginLoc(),
+                                "Generating code for CXXExpansionStmt");
 
+  for (const Attr * A : ForAttrs)
+    CGM.getDiags().Report(S.getBeginLoc(),
+                          diag::warn_attribute_context_unsupported)
+            << A << A->getRange();
+
+  assert(S.isInstantiated() && "Should have been instantiated");
   assert(S.getNumInstantiatedStmts() == S.getInstantiatedStmts().size() &&
          "These should not be different at this point");
 
-  if (!S.getNumInstantiatedStmts())
+  if (S.getNumInstantiatedStmts() == 0)
     return;
 
   JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
@@ -1203,7 +1210,7 @@ CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
   }
 
   // Emit the {LoopVarStmt, Body} instantiations
-  // DWR FIXME handle continue, break statements
+  // DWR FIXME test continue, break statements
   ArrayRef<Stmt *> Insts = S.getInstantiatedStmts();
   for (std::size_t I = 0; I < S.getNumInstantiatedStmts(); ++I) {
     LexicalScope BodyScope(*this, S.getSourceRange());

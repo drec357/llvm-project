@@ -3636,7 +3636,8 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
 
   // If we reach this point, and we're not allowing uninstantiated decls,
   // then we have a sema bug.
-  assert(InstantiatingExpansionStmt && "declaration not instantiated in this scope");
+  assert(InstantiatingExpansionStmt &&
+         "declaration not instantiated in this scope");
   return nullptr;
 }
 
