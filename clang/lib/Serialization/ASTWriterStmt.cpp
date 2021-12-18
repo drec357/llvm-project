@@ -1680,6 +1680,7 @@ void ASTStmtWriter::VisitCXXPackExpansionStmt(
                                              CXXPackExpansionStmt *S) {
   VisitCXXExpansionStmt(S);
   Record.AddStmt(S->getRangeExpr());
+  Record.AddStmt(S->getSizeOfPackExpr());
   Code = serialization::STMT_CXX_PACK_EXPANSION;
 }
 

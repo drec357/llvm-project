@@ -245,15 +245,15 @@ class CXXExpansionStmt : public Stmt {
   };
   Stmt *SubExprs[END];
 
-  /// The template parameter list which stores the induction variable
-  /// used to form the dependent structure of the loop body.
-  TemplateParameterList *InductionVarTPL;
-
   SourceLocation TemplateForLoc;
   SourceLocation ConstexprLoc;
   SourceLocation ColonLoc;
   SourceLocation StructLoc;
   SourceLocation RParenLoc;
+
+  /// The template parameter list which stores the induction variable
+  /// used to form the dependent structure of the loop body.
+  TemplateParameterList *InductionVarTPL;
 
   /// The expansion size of the range. When the range is dependent
   /// this value is not meaningful.
@@ -271,15 +271,7 @@ protected:
                    SourceLocation TFL, SourceLocation CEL,
                    SourceLocation CL, SourceLocation SL,
                    SourceLocation RPL, Stmt *RangeStmt = nullptr,
-                   Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {})
-    : Stmt(SC), TemplateForLoc(TFL), ConstexprLoc(CEL),
-      ColonLoc(CL), StructLoc(SL), RParenLoc(RPL),
-      NumInstantiatedStmts(Insts.size()),
-      InstantiatedStmts(const_cast<Stmt **>(Insts.data())) {
-    SubExprs[LOOP] = LoopVar;
-    SubExprs[RANGE] = RangeStmt;
-    SubExprs[BODY] = Body;
-  }
+                   Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {});
 
   CXXExpansionStmt(StmtClass SC, EmptyShell Empty)
     : Stmt(SC, Empty) {}
@@ -330,6 +322,10 @@ public:
       return {};
     return llvm::makeArrayRef(InstantiatedStmts, NumInstantiatedStmts);
   }
+
+  /// Whether this has been instantiated into a substitute compound statement,
+  /// vs. is still dependent.
+  bool isInstantiated() const { return InstantiatedStmts; }
 
   size_t getNumInstantiatedStmts() const { return NumInstantiatedStmts; }
 
@@ -567,15 +563,18 @@ public:
 /// \endverbatim
 ///
 class CXXPackExpansionStmt final : public CXXExpansionStmt {
+  SizeOfPackExpr *PackSize; // Not a child expression
 
   CXXPackExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
                        TemplateParameterList *Parms,
                        SourceLocation TFL, SourceLocation CEL,
                        SourceLocation CL, SourceLocation RPL,
+                       SizeOfPackExpr *PackSize,
                        Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {})
     : CXXExpansionStmt(CXXPackExpansionStmtClass, LoopVar, Parms,
                        TFL, CEL, CL, /*StructLoc=*/SourceLocation(),
-                       RPL, RangeExpr, Body, Insts) {}
+                       RPL, RangeExpr, Body, Insts),
+      PackSize(PackSize) {}
 
   CXXPackExpansionStmt(EmptyShell Empty)
     : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
@@ -585,6 +584,7 @@ public:
   Create(ASTContext &Context, DeclStmt *LoopVar, Expr *RangeExpr,
          TemplateParameterList *InductionVarTPL, SourceLocation TFL,
          SourceLocation CEL, SourceLocation CL, SourceLocation RPL,
+         SizeOfPackExpr *PackSize,
          Stmt *Body = nullptr, ArrayRef<Stmt *> Insts = {});
 
   static CXXPackExpansionStmt *Create(ASTContext &Context,
@@ -595,7 +595,14 @@ public:
     return cast<Expr>(getRangeStmtOrExpr());
   }
   Expr *getRangeExpr() { return cast<Expr>(getRangeStmtOrExpr()); }
-  void setRangePackExpr(Expr *V) { setRangeStmtOrExpr(V); }
+  void setRangeExpr(Expr *V) { setRangeStmtOrExpr(V); }
+
+  /// Returns an implicit \c sizeof...(Pack) expression which we carry and
+  /// transform simply to calculate the size of the pack (except for
+  /// FuncitonParmPackExprs, which carry their size within.)
+  const SizeOfPackExpr *getSizeOfPackExpr() const { return PackSize; }
+  SizeOfPackExpr *getSizeOfPackExpr() { return PackSize; }
+  void setSizeOfPackExpr(SizeOfPackExpr *V) { PackSize = V; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXPackExpansionStmtClass;

@@ -718,8 +718,6 @@ public:
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
-  StmtResult TransformInstantiatedCXXExpansionStmt(CXXExpansionStmt *S);
-
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
 #define STMT(Node, Parent)                        \
@@ -2445,11 +2443,12 @@ public:
                                          SourceLocation ConstexprLoc,
                                          SourceLocation ColonLoc,
                                          Expr *RangeExpr, Stmt *LoopVarDS,
+                                         SizeOfPackExpr *PackSize,
                                          SourceLocation RParenLoc) {
     return getSema().ActOnCXXExpansionStmt(TemplateForLoc, ConstexprLoc,
                                            LoopVarDS, ColonLoc,
                                            RangeExpr, RParenLoc,
-                                           Sema::BFRK_Rebuild,
+                                           PackSize, Sema::BFRK_Rebuild,
                                            ConstexprLoc.isValid());
   }
 
@@ -2470,7 +2469,9 @@ public:
           cast<CXXPackExpansionStmt>(OldS)->getRangeExpr(),
           OldS->getInductionVarTPL(), OldS->getTemplateForLoc(),
           OldS->getConstexprLoc(), OldS->getColonLoc(),
-          OldS->getRParenLoc(), NewBody, NewInsts);
+          OldS->getRParenLoc(),
+          cast<CXXPackExpansionStmt>(OldS)->getSizeOfPackExpr(),
+          NewBody, NewInsts);
     default:
       llvm_unreachable("Unhandled CXXExpansionStmt subclass");
     }
@@ -2737,9 +2738,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCXXSelectPackElemExpr(SourceLocation SelectLoc,
-                                              Expr *Range, Expr *Index) {
-    return getSema().ActOnCXXSelectPackElemExpr(SelectLoc, Range,
-                                                    Index);
+                                          Expr *Range, Expr *Index) {
+    return getSema().ActOnCXXSelectPackElemExpr(SelectLoc, Range, Index);
   }
 
   /// Build a new call expression.
@@ -8463,77 +8463,43 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   return FinishCXXForRangeStmt(NewStmt.get(), Body.get());
 }
 
-/// This helps us deal with transformations of CXXExpansionStmts which
-/// have already been expanded, which tells us:
-///   1. We are probably in a nested expansion, and
-///   2. The RangeVar/RangeExpr and LoopVar are non-dependent, but
-///   3. The instantiated statements may or may not be dependent.
-template <typename Derived>
-StmtResult
-TreeTransform<Derived>::TransformInstantiatedCXXExpansionStmt(
-                                                         CXXExpansionStmt *S) {
-  assert(!getDerived().AlwaysRebuild() && "This not do a full rebuild");
-
-  // Transform the (always-dependent) getBody() expression, whence the
-  // instantiations arose.  While this new body is not necessary to
-  // re-instantiate the instantiations -- they can be individually
-  // transformed at this point -- at least transforming it can tell us whether
-  // we need to transform the instantiations again.
-  StmtResult NewBody = getDerived().TransformStmt(S->getBody());
-  if (NewBody.isInvalid())
-    return StmtError();
-  if (NewBody.get() == S->getBody()) {
-    // The body is unchanged by transformation,
-    // meaning its instantiations should be unchanged as well.
-    // We can simply return the old node.
-    return S;
-  }
-
-  // The dependent body was changed during transformation, which means
-  // the instantiations should as well.
-  size_t N = S->getNumInstantiatedStmts();
-  auto OldInstsArr = S->getInstantiatedStmts();
-  assert(N == OldInstsArr.size());
-  Stmt **NewInstantiations = new (SemaRef.Context) Stmt *[N];
-  for (std::size_t I = 0; I < N; ++I) {
-    StmtResult SR = getDerived().TransformStmt(OldInstsArr[I]);
-    if (SR.isInvalid())
-      return StmtError();
-    assert(NewInstantiations[I] != SR.get() &&
-           "Expcted this would transform given that the dependent body did");
-    NewInstantiations[I] = SR.get();
-  }
-
-  // Dispatch to the appropriate Create function
-  return getDerived().
-      RebuildInstantiatedCXXExpansionStmt(S, NewBody.get(),
-                                          { NewInstantiations, N });
-}
-
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(
-                                              CXXPackExpansionStmt *S) {
-  // If this is a nested expansion, it needs special handling:
-  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
-    return TransformInstantiatedCXXExpansionStmt(S);
+                                                    CXXPackExpansionStmt *S) {
 
-  ExprResult RangeExpr;
-  RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
+  ExprResult RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
   if (RangeExpr.isInvalid())
     return StmtError();
 
-  // FIXME: Is this actually an evaluated expression.
-  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid())
-    return StmtError();
+  ExprResult PackSize = getDerived().TransformExpr(S->getSizeOfPackExpr());
+    if (PackSize.isInvalid())
+      return StmtError();
+
+  // Hack: we seem to get weird assert fails on cerain cases if we transform
+  // the loop var stmt after it was previously instantiated.  Fortunately,
+  // it does not (yet) seem to be necessary to transform it: if the old
+  // statement had been previously instantiated, the loop variable seems to
+  // have no need for further transformation (knock on wood).
+  // The opposite seems to be the case for the RangeExpr and PackSize: they need
+  // to be rebuilt each time, even if already instantiated, or we will end
+  // up with an empty pack.
+  StmtResult LoopVarDS;
+  if (S->isInstantiated() && !getDerived().AlwaysRebuild())
+    LoopVarDS = S->getLoopVarStmt();
+  else {
+    LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+    if (LoopVarDS.isInvalid())
+      return StmtError();
+  }
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      LoopVar.get() != S->getLoopVarStmt()) {
+      LoopVarDS.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
-      S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+        S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
+        RangeExpr.get(), LoopVarDS.get(),
+        cast_or_null<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8548,7 +8514,8 @@ TreeTransform<Derived>::TransformCXXPackExpansionStmt(
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXPackExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+      RangeExpr.get(), LoopVarDS.get(),
+        cast_or_null<SizeOfPackExpr>(PackSize.get()), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8564,26 +8531,47 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::
 TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
-  // If this is a nested expansion, it needs special handling:
-  if (!S->getInstantiatedStmts().empty() && !getDerived().AlwaysRebuild())
-    return TransformInstantiatedCXXExpansionStmt(S);
+  StmtResult RangeVarDS, BeginVarDS, EndVarDS, LoopVarDS;
 
-  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeStmt());
-  if (RangeVar.isInvalid())
+  // A bit of a hack to get `template for (auto x : struct obj)` to work:
+  // if we transform it here, we get a weird assert fail.
+  // But, if S has already been instantiated, that means we already know the
+  // class of the range, which is all we need.
+  if (S->getStructLoc().isValid() && S->isInstantiated() &&
+      !getDerived().AlwaysRebuild())
+    RangeVarDS = S->getRangeStmt();
+  else {
+    RangeVarDS = getDerived().TransformStmt(S->getRangeStmt());
+    if (RangeVarDS.isInvalid())
+      return StmtError();
+
+    BeginVarDS = getDerived().TransformStmt(S->getBeginStmt());
+    if (BeginVarDS.isInvalid())
+      return StmtError();
+
+    EndVarDS = getDerived().TransformStmt(S->getEndStmt());
+    if (EndVarDS.isInvalid())
+      return StmtError();
+  }
+
+  // It seems necessary to rebuild the loop variable every time, to avoid
+  // weird errors.
+  LoopVarDS = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVarDS.isInvalid())
     return StmtError();
 
-  // FIXME: Is this actually an evaluated expression.
-  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
-  if (LoopVar.isInvalid())
-    return StmtError();
-
+  // If any of the above has changed, or we have been asked to always rebuild,
+  // redo all the ExpansionStatementBuilder stuff
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      RangeVar.get() != S->getRangeStmt() ||
-      LoopVar.get() != S->getLoopVarStmt()) {
+      RangeVarDS.get() != S->getRangeStmt() ||
+      BeginVarDS.get() != S->getBeginStmt() ||
+      EndVarDS.get() != S->getEndStmt() ||
+      LoopVarDS.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
         S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-        S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+        S->getStructLoc(), RangeVarDS.get(), LoopVarDS.get(),
+        S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8598,7 +8586,7 @@ TransformCXXCompositeExpansionStmt(CXXCompositeExpansionStmt *S) {
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
       S->getTemplateForLoc(), S->getConstexprLoc(), S->getColonLoc(),
-      S->getStructLoc(), RangeVar.get(), LoopVar.get(), S->getRParenLoc());
+      S->getStructLoc(), RangeVarDS.get(), LoopVarDS.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }

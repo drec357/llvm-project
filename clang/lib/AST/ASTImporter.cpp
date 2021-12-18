@@ -562,6 +562,8 @@ namespace clang {
     ExpectedStmt VisitCXXCatchStmt(CXXCatchStmt *S);
     ExpectedStmt VisitCXXTryStmt(CXXTryStmt *S);
     ExpectedStmt VisitCXXForRangeStmt(CXXForRangeStmt *S);
+    //DWR FIXME: CXXCompositeExpansionStmt & CXXPackExpansionStmt
+    //   (and CXXSelectPackElemExpr and CXXSelectMemberExpr)
     // FIXME: MSDependentExistsStmt
     ExpectedStmt VisitObjCForCollectionStmt(ObjCForCollectionStmt *S);
     ExpectedStmt VisitObjCAtCatchStmt(ObjCAtCatchStmt *S);

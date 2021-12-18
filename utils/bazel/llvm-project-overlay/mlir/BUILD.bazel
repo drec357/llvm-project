@@ -839,6 +839,7 @@ cc_binary(
 td_library(
     name = "OpBaseTdFiles",
     srcs = [
+        "include/mlir/IR/EnumAttr.td",
         "include/mlir/IR/OpAsmInterface.td",
         "include/mlir/IR/OpBase.td",
         "include/mlir/IR/RegionKindInterface.td",
@@ -1303,7 +1304,6 @@ td_library(
     name = "ArmSVETdFiles",
     srcs = [
         "include/mlir/Dialect/ArmSVE/ArmSVE.td",
-        "include/mlir/Dialect/ArmSVE/ArmSVEOpBase.td",
     ],
     includes = ["include"],
     deps = [
@@ -3000,11 +3000,13 @@ cc_library(
     deps = [
         ":ArithmeticDialect",
         ":Async",
+        ":DLTIDialect",
         ":GPUDialect",
         ":GPUPassIncGen",
         ":MemRefDialect",
         ":IR",
         ":ParallelLoopMapperAttrGen",
+        ":Parser",
         ":Pass",
         ":ROCDLToLLVMIRTranslation",
         ":SCFDialect",
@@ -6393,12 +6395,11 @@ cc_library(
     includes = ["include"],
     deps = [
         ":BufferizableOpInterface",
+        ":BufferizationDialect",
         ":IR",
         ":LinalgOps",
         ":LinalgStructuredOpsIncGen",
-        ":Support",
         ":TensorDialect",
-        "//llvm:Support",
     ],
 )
 
@@ -6413,6 +6414,7 @@ cc_library(
     includes = ["include"],
     deps = [
         ":BufferizableOpInterface",
+        ":BufferizationDialect",
         ":IR",
         ":SCFDialect",
         ":Support",
@@ -6569,11 +6571,10 @@ cc_library(
     name = "LinalgOps",
     srcs = [
         "lib/Dialect/Linalg/IR/LinalgOps.cpp",
-        "lib/Dialect/Linalg/IR/LinalgTypes.cpp",
+        "lib/Dialect/Linalg/IR/LinalgDialect.cpp",
     ],
     hdrs = [
-        "include/mlir/Dialect/Linalg/IR/LinalgOps.h",
-        "include/mlir/Dialect/Linalg/IR/LinalgTypes.h",
+        "include/mlir/Dialect/Linalg/IR/Linalg.h"
     ],
     includes = ["include"],
     deps = [
@@ -7923,5 +7924,53 @@ cc_binary(
         ":Pass",
         "//llvm:Support",
         "//mlir/test:TestDialect",
+    ],
+)
+
+cc_library(
+    name = "PDLLAST",
+    srcs = glob(
+        [
+            "lib/Tools/PDLL/AST/*.cpp",
+            "lib/Tools/PDLL/AST/*.h",
+        ],
+    ),
+    hdrs = glob(["include/mlir/Tools/PDLL/AST/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//llvm:Support",
+        "//mlir:Support",
+    ],
+)
+
+cc_library(
+    name = "PDLLParser",
+    srcs = glob(
+        [
+            "lib/Tools/PDLL/Parser/*.cpp",
+            "lib/Tools/PDLL/Parser/*.h",
+        ],
+    ),
+    hdrs = glob(["include/mlir/Tools/PDLL/Parser/*.h"]),
+    includes = ["include"],
+    deps = [
+        ":PDLLAST",
+        ":Support",
+        ":TableGen",
+        "//llvm:Support",
+    ],
+)
+
+cc_binary(
+    name = "mlir-pdll",
+    srcs = [
+        "tools/mlir-pdll/mlir-pdll.cpp",
+    ],
+    deps = [
+        ":PDLLAST",
+        ":PDLLParser",
+        ":Support",
+        "//llvm:Support",
+        "//llvm:config",
     ],
 )

@@ -2949,6 +2949,11 @@ handleCompareOpForVectorHelper(const APTy &LHSValue, BinaryOperatorKind Opcode,
     break;
   }
 
+  // The boolean operations on these vector types use an instruction that
+  // results in a mask of '-1' for the 'truth' value.  Ensure that we negate 1
+  // to -1 to make sure that we produce the correct value.
+  Result.negate();
+
   return true;
 }
 
@@ -3247,9 +3252,7 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
       return true;
 
     if (!isa<ParmVarDecl>(VD)) {
-      assert(VD->getName() != "__range" &&
-             "[TemplateFor.Struct] known bug in nested expansions over "
-             "structs with non-constexpr loop vars");
+      assert(!VD->isImplicitExpansionRangeVar() && "Template-for implem bug");
 
       // Assume variables referenced within a lambda's call operator that were
       // not declared within the call operator are captures and during checking
@@ -5482,7 +5485,7 @@ static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
     if (ESR != ESR_Succeeded)
       return ESR;
 
-    // Create the __begin and __end iterators if they exist.
+    // Evaluate the __begin and __end variables if they exist.
     if (const Stmt *Begin = ES->getBeginStmt()) {
       ESR = EvaluateStmt(Result, Info, Begin);
       if (ESR != ESR_Succeeded)
@@ -5517,6 +5520,8 @@ static EvalStmtResult EvaluateStmt(StmtResultStorage &Result, EvalInfo &Info,
     // find the necessary substitute DeclRefs and instantiate them throughout
     // the body via CXXSelectPackElemExprs, so that will not be referenced
     // during evaluation of the instantiated bodies.
+    // Same with the ES->getSizeOfPackExpr() -- that will have been used
+    // earlier by Sema and is no longer useful at this stage of the program
 
     for (const Stmt *SubStmt : ES->getInstantiatedStmts()) {
       BlockScopeRAII InnerScope(Info);
@@ -7600,6 +7605,9 @@ public:
   bool VisitBuiltinBitCastExpr(const BuiltinBitCastExpr *E) {
     return static_cast<Derived*>(this)->VisitCastExpr(E);
   }
+  bool VisitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E) {
+    return StmtVisitorTy::Visit(E->getSubstituteExpr());
+  }
 
   bool VisitBinaryOperator(const BinaryOperator *E) {
     switch (E->getOpcode()) {
@@ -8271,7 +8279,6 @@ public:
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
   bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
-  bool VisitCXXSelectPackElemExpr(const CXXSelectPackElemExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -8581,11 +8588,6 @@ bool
 LValueExprEvaluator::VisitCXXSelectMemberExpr(
                                            const CXXSelectMemberExpr *E) {
   return VisitMemberExpr(E->getSubstituteExpr());
-}
-
-bool LValueExprEvaluator::VisitCXXSelectPackElemExpr(
-                                         const CXXSelectPackElemExpr *E) {
-  return VisitDeclRefExpr(E->getSubstituteExpr());
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -10431,7 +10433,8 @@ namespace {
     bool VisitInitListExpr(const InitListExpr *E);
     bool VisitUnaryImag(const UnaryOperator *E);
     bool VisitBinaryOperator(const BinaryOperator *E);
-    // FIXME: Missing: unary -, unary ~, conditional operator (for GNU
+    bool VisitUnaryOperator(const UnaryOperator *E);
+    // FIXME: Missing: conditional operator (for GNU
     //                 conditional select), shufflevector, ExtVectorElementExpr
   };
 } // end anonymous namespace
@@ -10614,6 +10617,83 @@ bool VectorExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
     return false;
 
   return Success(LHSValue, E);
+}
+
+static llvm::Optional<APValue> handleVectorUnaryOperator(ASTContext &Ctx,
+                                                         QualType ResultTy,
+                                                         UnaryOperatorKind Op,
+                                                         APValue Elt) {
+  switch (Op) {
+  case UO_Plus:
+    // Nothing to do here.
+    return Elt;
+  case UO_Minus:
+    if (Elt.getKind() == APValue::Int) {
+      Elt.getInt().negate();
+    } else {
+      assert(Elt.getKind() == APValue::Float &&
+             "Vector can only be int or float type");
+      Elt.getFloat().changeSign();
+    }
+    return Elt;
+  case UO_Not:
+    // This is only valid for integral types anyway, so we don't have to handle
+    // float here.
+    assert(Elt.getKind() == APValue::Int &&
+           "Vector operator ~ can only be int");
+    Elt.getInt().flipAllBits();
+    return Elt;
+  case UO_LNot: {
+    if (Elt.getKind() == APValue::Int) {
+      Elt.getInt() = !Elt.getInt();
+      // operator ! on vectors returns -1 for 'truth', so negate it.
+      Elt.getInt().negate();
+      return Elt;
+    }
+    assert(Elt.getKind() == APValue::Float &&
+           "Vector can only be int or float type");
+    // Float types result in an int of the same size, but -1 for true, or 0 for
+    // false.
+    APSInt EltResult{Ctx.getIntWidth(ResultTy),
+                     ResultTy->isUnsignedIntegerType()};
+    if (Elt.getFloat().isZero())
+      EltResult.setAllBits();
+    else
+      EltResult.clearAllBits();
+
+    return APValue{EltResult};
+  }
+  default:
+    // FIXME: Implement the rest of the unary operators.
+    return llvm::None;
+  }
+}
+
+bool VectorExprEvaluator::VisitUnaryOperator(const UnaryOperator *E) {
+  Expr *SubExpr = E->getSubExpr();
+  const auto *VD = SubExpr->getType()->castAs<VectorType>();
+  // This result element type differs in the case of negating a floating point
+  // vector, since the result type is the a vector of the equivilant sized
+  // integer.
+  const QualType ResultEltTy = VD->getElementType();
+  UnaryOperatorKind Op = E->getOpcode();
+
+  APValue SubExprValue;
+  if (!Evaluate(SubExprValue, Info, SubExpr))
+    return false;
+
+  assert(SubExprValue.getVectorLength() == VD->getNumElements() &&
+         "Vector length doesn't match type?");
+
+  SmallVector<APValue, 4> ResultElements;
+  for (unsigned EltNum = 0; EltNum < VD->getNumElements(); ++EltNum) {
+    llvm::Optional<APValue> Elt = handleVectorUnaryOperator(
+        Info.Ctx, ResultEltTy, Op, SubExprValue.getVectorElt(EltNum));
+    if (!Elt)
+      return false;
+    ResultElements.push_back(*Elt);
+  }
+  return Success(APValue(ResultElements.data(), ResultElements.size()), E);
 }
 
 //===----------------------------------------------------------------------===//
@@ -14866,6 +14946,7 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
     if (!EvaluateArray(E, LV, Value, Info))
       return false;
     Result = Value;
+
   } else if (T->isRecordType()) {
     LValue LV;
     APValue &Value =
