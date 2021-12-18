@@ -1837,8 +1837,12 @@ ReflexprIdExpr::ReflexprIdExpr(QualType resultType, const NamedDecl *nDecl,
       setKind(MOK_TemplateTypeParameter);
     }
   } else if (const auto *FD = dyn_cast<FunctionDecl>(nDecl)) {
-    if (isa<CXXConstructorDecl>(FD)) {
-      setKind(MOK_Constructor);
+    if (const auto *CCD = dyn_cast<CXXConstructorDecl>(FD)) {
+      if (CCD->isDefaultConstructor() ||
+          CCD->isCopyOrMoveConstructor()) 
+        setKind(MOK_SpecialConstructor);
+      else
+        setKind(MOK_Constructor);
     } else if (isa<CXXDestructorDecl>(FD)) {
       setKind(MOK_Destructor);
     } else if (isa<CXXConversionDecl>(FD)) {
@@ -2189,6 +2193,7 @@ StringRef ReflexprIdExpr::getMetaobjectKindName(MetaobjectKind MoK) {
   case MOK_NamedFunction:
     return "a function";
   case MOK_Constructor:
+  case MOK_SpecialConstructor:
     return "a constructor";
   case MOK_Destructor:
     return "a destructor";
@@ -2283,6 +2288,8 @@ translateMetaobjectKindToMetaobjectConcept(MetaobjectKind MoK) {
     return MOC_Function;
   case MOK_Constructor:
     return MOC_Constructor;
+  case MOK_SpecialConstructor:
+    return MOC_SpecialConstructor;
   case MOK_Destructor:
     return MOC_Destructor;
   case MOK_Operator:
@@ -2414,6 +2421,12 @@ const NamedDecl *ReflexprIdExpr::findArgumentNamedDecl(ASTContext &Ctx,
 
 const ValueDecl *ReflexprIdExpr::findArgumentValueDecl(ASTContext &Ctx) const {
   return dyn_cast<ValueDecl>(findArgumentNamedDecl(Ctx, false));
+}
+
+const LambdaCapture *ReflexprIdExpr::findArgumentLambdaCapture(ASTContext &) const {
+  if (isArgumentLambdaCapture())
+    return getArgumentLambdaCapture();
+  return nullptr;
 }
 
 bool ReflexprIdExpr::reflectsType() const {
@@ -2733,6 +2746,10 @@ bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
   case UMOO_UsesDefaultReferenceCapture:
   case UMOO_IsCallOperatorConst:
     return conceptIsA(MoC, MOC_Lambda);
+  case UMOO_IsExplicitlyCaptured:
+    return conceptIsA(MoC, MOC_LambdaCapture);
+  case UMOO_HasDefaultArgument:
+    return conceptIsA(MoC, MOC_FunctionParameter);
   case UMOO_GetClass:
     return conceptIsA(MoC, MOC_Base);
   case UMOO_GetAccessSpecifier:
@@ -2744,12 +2761,17 @@ bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
   case UMOO_IsConstexpr:
     return conceptIsA(MoC, MOC_Variable) ||
            conceptIsA(MoC, MOC_Callable);
+  case UMOO_IsNoexcept:
+  case UMOO_IsDeleted:
+    return conceptIsA(MoC, MOC_Callable);
   case UMOO_IsExplicit:
     return conceptIsA(MoC, MOC_Constructor) ||
            conceptIsA(MoC, MOC_ConversionOperator);
   case UMOO_IsInline:
     return conceptIsA(MoC, MOC_Namespace) ||
            conceptIsA(MoC, MOC_Callable);
+  case UMOO_IsThreadLocal:
+    return conceptIsA(MoC, MOC_Variable);
   case UMOO_IsStatic:
     return conceptIsA(MoC, MOC_Variable) ||
            conceptIsA(MoC, MOC_MemberFunction);
@@ -2771,6 +2793,12 @@ bool UnaryMetaobjectOpExpr::isOperationApplicable(MetaobjectKind MoK,
   case UMOO_IsImplicitlyDeclared:
   case UMOO_IsDefaulted:
     return conceptIsA(MoC, MOC_SpecialMemberFunction);
+  case UMOO_IsCopyConstructor:
+  case UMOO_IsMoveConstructor:
+    return conceptIsA(MoC, MOC_Constructor);
+  case UMOO_IsCopyAssignmentOperator:
+  case UMOO_IsMoveAssignmentOperator:
+    return conceptIsA(MoC, MOC_Operator);
   case UMOO_GetPointer:
     return conceptIsA(MoC, MOC_Variable) ||
            conceptIsA(MoC, MOC_Function);
@@ -3168,6 +3196,27 @@ bool UnaryMetaobjectOpExpr::opIsCallOperatorConst(
   return false;
 }
 
+bool UnaryMetaobjectOpExpr::opIsExplicitlyCaptured(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *LC = REE->findArgumentLambdaCapture(Ctx)) {
+    return LC->isExplicit();
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opHasDefaultArgument(
+    ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *PVD = dyn_cast<ParmVarDecl>(ND))
+      return PVD->hasDefaultArg();
+  }
+  return false;
+}
+
 ReflexprIdExpr *UnaryMetaobjectOpExpr::opGetAccessSpecifier(ASTContext &Ctx,
                                                             ReflexprIdExpr *REE) {
   assert(REE);
@@ -3351,6 +3400,18 @@ bool UnaryMetaobjectOpExpr::opIsConstexpr(ASTContext &Ctx, ReflexprIdExpr *REE) 
   return false;
 }
 
+bool UnaryMetaobjectOpExpr::opIsNoexcept(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      const auto EST = FD->getExceptionSpecType();
+      return EST == EST_BasicNoexcept || EST == EST_NoexceptTrue;
+    }
+  }
+  return false;
+}
+
 bool UnaryMetaobjectOpExpr::opIsExplicit(ASTContext &Ctx, ReflexprIdExpr *REE) {
   assert(REE);
 
@@ -3373,6 +3434,16 @@ bool UnaryMetaobjectOpExpr::opIsInline(ASTContext &Ctx, ReflexprIdExpr *REE) {
       return FD->isInlineSpecified();
     if (const auto *NSD = dyn_cast<NamespaceDecl>(ND))
       return NSD->isInline();
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsThreadLocal(ASTContext &Ctx, ReflexprIdExpr *REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *VD = dyn_cast<VarDecl>(ND))
+      return VD->getTLSKind() != VarDecl::TLS_None;
   }
   return false;
 }
@@ -3497,7 +3568,67 @@ bool UnaryMetaobjectOpExpr::opIsDefaulted(
 
   if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
     if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
-      return !FD->isDefaulted();
+      return FD->isDefaulted();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsDeleted(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      return FD->isDeleted();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsCopyConstructor(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CCD = dyn_cast<CXXConstructorDecl>(ND)) {
+      return CCD->isCopyConstructor();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsMoveConstructor(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CCD = dyn_cast<CXXConstructorDecl>(ND)) {
+      return CCD->isMoveConstructor();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsCopyAssignmentOperator(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->isCopyAssignmentOperator();
+    }
+  }
+  return false;
+}
+
+bool UnaryMetaobjectOpExpr::opIsMoveAssignmentOperator(
+    ASTContext &Ctx, ReflexprIdExpr* REE) {
+  assert(REE);
+
+  if (const auto *ND = REE->findArgumentNamedDecl(Ctx, true)) {
+    if (const auto *CMD = dyn_cast<CXXMethodDecl>(ND)) {
+      return CMD->isMoveAssignmentOperator();
     }
   }
   return false;
@@ -4051,10 +4182,12 @@ bool NaryMetaobjectOpExpr::opReflectsSame(ASTContext &Ctx,
     if (ND1 == ND2)
       return true;
     if (ND1->getDeclName() == ND2->getDeclName()) {
-      if (ND1->getDeclContext()->getRedeclContext()->Equals(
-              ND2->getDeclContext()->getRedeclContext())) {
+      if (declaresSameEntity(
+        cast<Decl>(ND1->getDeclContext()->getRedeclContext()),
+        cast<Decl>(ND2->getDeclContext()->getRedeclContext()))) {
         if (ND1->getKind() == ND2->getKind()) {
-          // [reflection-ts] FIXME: fully qualified name or something else?
+          // [reflection-ts] FIXME: this will not work
+          // for overloaded functions, etc.
           return ND1->getName() == ND2->getName();
         }
       }

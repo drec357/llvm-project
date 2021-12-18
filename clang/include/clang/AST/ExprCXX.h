@@ -5316,6 +5316,7 @@ public:
     return findArgumentNamedDecl(Ctx, getRemoveSugar());
   }
   const ValueDecl *findArgumentValueDecl(ASTContext &) const;
+  const LambdaCapture *findArgumentLambdaCapture(ASTContext &) const;
 
   bool isArgumentType() const { return getArgKind() == REAK_TypeInfo; }
 
@@ -5482,11 +5483,34 @@ class UnaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static bool opUsesDefaultCopyCapture(ASTContext &, ReflexprIdExpr*);
   static bool opUsesDefaultReferenceCapture(ASTContext &, ReflexprIdExpr*);
   static bool opIsCallOperatorConst(ASTContext &, ReflexprIdExpr*);
-  static ReflexprIdExpr *opGetAccessSpecifier(ASTContext &, ReflexprIdExpr*);
+  static bool opIsExplicitlyCaptured(ASTContext &, ReflexprIdExpr*);
+  static bool opHasDefaultArgument(ASTContext &, ReflexprIdExpr*);
   static bool opIsPublic(ASTContext &, ReflexprIdExpr*);
   static bool opIsProtected(ASTContext &, ReflexprIdExpr*);
   static bool opIsPrivate(ASTContext &, ReflexprIdExpr*);
+  static bool opIsScopedEnum(ASTContext &, ReflexprIdExpr*);
+  static bool opIsConstexpr(ASTContext &, ReflexprIdExpr*);
+  static bool opIsNoexcept(ASTContext &, ReflexprIdExpr*);
+  static bool opIsExplicit(ASTContext &, ReflexprIdExpr*);
+  static bool opIsInline(ASTContext &, ReflexprIdExpr*);
+  static bool opIsThreadLocal(ASTContext &, ReflexprIdExpr*);
+  static bool opIsStatic(ASTContext &, ReflexprIdExpr*);
+  static bool opIsVirtual(ASTContext &, ReflexprIdExpr*);
+  static bool opIsPureVirtual(ASTContext &, ReflexprIdExpr*);
+  static bool opIsFinal(ASTContext &, ReflexprIdExpr*);
+  static bool opIsConst(ASTContext &, ReflexprIdExpr*);
+  static bool opIsVolatile(ASTContext &, ReflexprIdExpr*);
+  static bool opHasLValueRefQualifier(ASTContext &, ReflexprIdExpr*);
+  static bool opHasRValueRefQualifier(ASTContext &, ReflexprIdExpr*);
+  static bool opIsImplicitlyDeclared(ASTContext &, ReflexprIdExpr*);
+  static bool opIsDefaulted(ASTContext &, ReflexprIdExpr*);
+  static bool opIsDeleted(ASTContext &, ReflexprIdExpr*);
+  static bool opIsCopyConstructor(ASTContext &, ReflexprIdExpr*);
+  static bool opIsMoveConstructor(ASTContext &, ReflexprIdExpr*);
+  static bool opIsCopyAssignmentOperator(ASTContext &, ReflexprIdExpr*);
+  static bool opIsMoveAssignmentOperator(ASTContext &, ReflexprIdExpr*);
 
+  static ReflexprIdExpr *opGetAccessSpecifier(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetBaseClasses(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetPublicBaseClasses(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetMemberTypes(ASTContext &, ReflexprIdExpr*);
@@ -5502,25 +5526,7 @@ class UnaryMetaobjectOpExpr : public Expr, public MetaobjectOpExprBase {
   static ReflexprIdExpr *opGetEnumerators(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetParameters(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opGetCaptures(ASTContext &, ReflexprIdExpr*);
-
   static ReflexprIdExpr *opGetClass(ASTContext &, ReflexprIdExpr*);
-
-  static bool opIsScopedEnum(ASTContext &, ReflexprIdExpr*);
-
-  static bool opIsConstexpr(ASTContext &, ReflexprIdExpr*);
-  static bool opIsExplicit(ASTContext &, ReflexprIdExpr*);
-  static bool opIsInline(ASTContext &, ReflexprIdExpr*);
-  static bool opIsStatic(ASTContext &, ReflexprIdExpr*);
-  static bool opIsVirtual(ASTContext &, ReflexprIdExpr*);
-  static bool opIsPureVirtual(ASTContext &, ReflexprIdExpr*);
-  static bool opIsFinal(ASTContext &, ReflexprIdExpr*);
-  static bool opIsConst(ASTContext &, ReflexprIdExpr*);
-  static bool opIsVolatile(ASTContext &, ReflexprIdExpr*);
-  static bool opHasLValueRefQualifier(ASTContext &, ReflexprIdExpr*);
-  static bool opHasRValueRefQualifier(ASTContext &, ReflexprIdExpr*);
-  static bool opIsImplicitlyDeclared(ASTContext &, ReflexprIdExpr*);
-  static bool opIsDefaulted(ASTContext &, ReflexprIdExpr*);
-
   static ReflexprIdExpr *opHideProtected(ASTContext &, ReflexprIdExpr*);
   static ReflexprIdExpr *opHidePrivate(ASTContext &, ReflexprIdExpr*);
 
