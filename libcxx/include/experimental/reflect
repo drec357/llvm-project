@@ -368,6 +368,13 @@ struct _LIBCPP_TEMPLATE_VIS is_constexpr
 template <Object _Tp>
 inline constexpr auto is_constexpr_v = is_constexpr<_Tp>::value;
 
+template <Callable _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_noexcept
+  : integral_constant<bool, __metaobject_is_noexcept(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Object _Tp>
+inline constexpr auto is_noexcept_v = is_noexcept<_Tp>::value;
+
 template <Object _Tp>
 requires (Constructor<_Tp> || ConversionOperator<_Tp>)
 struct _LIBCPP_TEMPLATE_VIS is_explicit
@@ -383,6 +390,13 @@ struct _LIBCPP_TEMPLATE_VIS is_inline
 
 template <Object _Tp>
 inline constexpr auto is_inline_v = is_inline<_Tp>::value;
+
+template <Variable _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_thread_local
+  : integral_constant<bool, __metaobject_is_thread_local(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Variable _Tp>
+inline constexpr auto is_thread_local_v = is_thread_local<_Tp>::value;
 
 template <Object _Tp>
 requires (Variable<_Tp> || MemberFunction<_Tp>)
@@ -513,6 +527,15 @@ struct _LIBCPP_TEMPLATE_VIS is_call_operator_const
 template <Lambda _Tp>
 inline constexpr auto is_call_operator_const_v = is_call_operator_const<_Tp>::value;
 
+template <LambdaCapture _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_explicitly_captured
+  : integral_constant<
+    bool,
+    __metaobject_is_explicitly_captured(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <LambdaCapture _Tp>
+inline constexpr auto is_explicitly_captured_v = is_explicitly_captured<_Tp>::value;
+
 template <MemberFunction _Tp>
 struct _LIBCPP_TEMPLATE_VIS is_const
   : integral_constant<bool, __metaobject_is_const(__unwrap_metaobject_id_v<_Tp>)> {};
@@ -540,6 +563,27 @@ struct _LIBCPP_TEMPLATE_VIS has_rvalueref_qualifier
 
 template <MemberFunction _Tp>
 inline constexpr auto has_rvalueref_qualifier_v = has_rvalueref_qualifier<_Tp>::value;
+
+template <SpecialMemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_implicitly_declared
+  : integral_constant<bool, __metaobject_is_implicitly_declared(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <SpecialMemberFunction _Tp>
+inline constexpr auto is_implicitly_declared_v = is_implicitly_declared<_Tp>::value;
+
+template <SpecialMemberFunction _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_defaulted
+  : integral_constant<bool, __metaobject_is_defaulted(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <SpecialMemberFunction _Tp>
+inline constexpr auto is_defaulted_v = is_defaulted<_Tp>::value;
+
+template <Callable _Tp>
+struct _LIBCPP_TEMPLATE_VIS is_deleted
+  : integral_constant<bool, __metaobject_is_deleted(__unwrap_metaobject_id_v<_Tp>)> {};
+
+template <Callable _Tp>
+inline constexpr auto is_deleted_v = is_deleted<_Tp>::value;
 
 template <Object _T1, Object _T2>
 struct _LIBCPP_TEMPLATE_VIS reflects_same
